@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Fuel Quantity Checksheet</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fuel Check">
+<style>
+  :root{
+    --border:#333;
+    --bg:#fff;
+    --grey:#e8e8e8;
+    --red:#ffd6d6;
+    --redtext:#a30000;
+    --green:#e2f7e2;
+    --greentext:#0a6e0a;
+    --amber:#fff3cd;
+    --ambertext:#8a6300;
+    --accent:#1a5fb4;
+    --highlight:#ffd966;
+    --highlighttext:#5c3d00;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    margin:0;padding:12px;background:#f2f2f2;color:#111;font-size:13px;
+  }
+  h1{font-size:18px;margin:0 0 2px 0;}
+  .sub{color:#555;margin:0 0 12px 0;font-size:12px;}
+
+
+  .panel{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:12px;}
+  .headerRow{display:flex;flex-wrap:wrap;gap:10px;}
+  .headerRow label{display:flex;flex-direction:column;font-size:11px;font-weight:600;color:#333;flex:1;min-width:120px;}
+  .headerRow input{margin-top:3px;padding:8px;font-size:14px;border:1px solid #999;border-radius:6px;}
+
+  .notesBox{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:12px;}
+  .notesBox h2{font-size:13px;margin:0 0 6px 0;}
+  .notesBox textarea{width:100%;min-height:78px;font-size:12px;border:1px solid #ccc;border-radius:6px;padding:6px;font-family:inherit;}
+  .notesBox .thresholdRow{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;flex-wrap:wrap;}
+  .notesBox input[type=number]{width:70px;padding:5px;border:1px solid #999;border-radius:5px;}
+
+  .tableWrap{overflow-x:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;max-height:70vh;overflow-y:auto;}
+  table{border-collapse:collapse;width:100%;min-width:1340px;}
+  th,td{border:1px solid #bbb;padding:0;text-align:center;vertical-align:middle;}
+  th{background:var(--grey);font-size:10.5px;padding:6px 3px;position:sticky;top:0;z-index:3;line-height:1.25;}
+  th .u{display:block;font-weight:400;color:#555;font-size:9.5px;}
+  td.rowNum{background:var(--grey);font-weight:600;font-size:11px;position:sticky;left:0;z-index:2;min-width:26px;}
+  td input[type=number], td input[type=text], td input[type=time], td input[type=date]{
+    width:100%;height:36px;border:none;text-align:center;font-size:12.5px;padding:2px;background:transparent;min-width:78px;
+  }
+  td input:focus{outline:2px solid var(--accent);background:#eef4ff;}
+  td.calc{background:#fafafa;color:#333;font-size:12px;font-weight:600;padding:4px 2px;min-width:70px;}
+  td.calc.flagged{background:var(--red);color:var(--redtext);}
+  td.calc.ok{background:var(--green);color:var(--greentext);}
+  td.calc.na{background:#f0f0f0;color:#999;font-weight:400;}
+  td.calc.highlight{background:var(--highlight);color:var(--highlighttext);font-weight:800;font-size:13px;}
+  th.highlight{background:var(--highlight);color:var(--highlighttext);}
+  td.result{font-size:11px;font-weight:700;min-width:110px;}
+  td.result.ok{background:var(--green);color:var(--greentext);}
+  td.result.flagged{background:var(--red);color:var(--redtext);}
+  .removeBtn{border:none;background:#c33;color:#fff;border-radius:4px;font-size:9px;padding:3px 5px;}
+
+  canvas.sigPad{width:100%;height:44px;touch-action:none;background:#fff;border:1px dashed #999;display:block;}
+  .sigCell{padding:3px;min-width:110px;}
+  .sigBtns{display:flex;gap:4px;justify-content:center;margin-top:2px;}
+  .sigBtns button{font-size:9px;padding:2px 5px;border:1px solid #999;border-radius:4px;background:#f5f5f5;}
+
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;position:sticky;bottom:0;background:#f2f2f2;padding:8px 0;}
+  .btn{
+    flex:1;min-width:140px;padding:12px;border:none;border-radius:8px;font-size:14px;font-weight:600;
+    color:#fff;background:var(--accent);cursor:pointer;
+  }
+  .btn.secondary{background:#555;}
+  .btn.add{background:#2a8f3f;flex:0 0 auto;min-width:auto;padding:10px 16px;font-size:13px;}
+  .btn.danger{background:#a30000;}
+
+  .legend{display:flex;gap:14px;font-size:11px;margin:6px 2px;color:#444;flex-wrap:wrap;}
+  .legend span.dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;}
+
+  tr.lockedRow td.calc, tr.lockedRow td.rowNum{background:#eceff1;}
+  tr.lockedRow input{background:#eceff1;color:#555;}
+  tr.lockedRow .sigPad{opacity:0.7;}
+  .lockTag{font-size:8.5px;color:#607d8b;display:block;font-weight:400;}
+
+  .monthBanner{background:#fff8e1;border:1px solid #e0b400;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  .monthBanner p{margin:0;font-size:12px;color:#5c4a00;flex:1;min-width:200px;}
+  .monthBanner .btns{display:flex;gap:8px;}
+  .monthBanner button{padding:8px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;}
+  .monthBanner .sendBtn{background:#164a34;color:#fff;}
+  .monthBanner .dismissBtn{background:#ddd;color:#333;}
+
+  @media print{
+    body{background:#fff;padding:0;font-size:9px;}
+    .toolbar,.notesBox .thresholdRow,.removeBtn,.sigBtns,.add,.monthBanner{display:none !important;}
+    .panel,.notesBox,.tableWrap{border:1px solid #000;box-shadow:none;max-height:none;overflow:visible;}
+    table{min-width:0;}
+  }
+</style>
+</head>
+<body>
+
+<h1>Fuel Quantity Checksheet</h1>
+<p class="sub">Digital version — one row per refuel. Fill in each refuel, sign, then print/share below.</p>
+
+<div class="monthBanner" id="monthBanner" style="display:none;">
+  <p id="monthBannerText"></p>
+  <div class="btns">
+    <button class="sendBtn" id="monthSendBtn">Print / Save as PDF</button>
+    <button class="dismissBtn" id="monthDismissBtn">Remind Me Later</button>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="headerRow">
+    <label>Aircraft Registration
+      <input type="text" id="rego" placeholder="e.g. VH-ABC">
+    </label>
+    <label>Base
+      <input type="text" id="operator" placeholder="Base">
+    </label>
+    <label>Sheet Start Date
+      <input type="date" id="sheetDate">
+    </label>
+  </div>
+</div>
+
+<div class="notesBox">
+  <h2>Notes</h2>
+  <textarea id="notesText">1. FQI After Refuel − FQI Before Refuel = FOB Δ (Kg)
+2. Kg ÷ Specific Gravity = Litres (specific gravity selectable 0.78–0.82, default 0.79 — all fuel entered in Kg as shown on the aircraft FQI)
+3. Discrepancy = FOB Δ − Fuel Required (Kg).
+   A refuel is OK if EITHER the % check or the Kg check is within limits.
+   It is only flagged for investigation if BOTH the % and Kg checks are exceeded.
+   Enter Desired Fuel After (Kg) to auto-calculate Fuel Required (Kg) = Desired Fuel After − FQI Before.
+4. A refuel row locks automatically 1 hour after every box in that row (including signature) has been completed.
+5. At month end, a banner prompts you to print/save the sheet as a PDF and email it to the recipient below.
+6. Once that PDF has been printed/shared, you'll be asked to confirm clearing the sheet to start the new month.</textarea>
+  <div class="thresholdRow">
+    % threshold (OK if within this):
+    <input type="number" id="threshold" value="3" step="0.1" min="0"> %
+    &nbsp;|&nbsp; Kg tolerance (OK if within this):
+    <input type="number" id="kgTolerance" value="15" step="0.1" min="0"> kg
+    &nbsp;|&nbsp; Fuel specific gravity:
+    <select id="specificGravity">
+      <option value="0.78">0.78</option>
+      <option value="0.79" selected>0.79</option>
+      <option value="0.80">0.80</option>
+      <option value="0.81">0.81</option>
+      <option value="0.82">0.82</option>
+    </select>
+  </div>
+</div>
+
+<div class="legend">
+  <span><span class="dot" style="background:var(--green)"></span>OK</span>
+  <span><span class="dot" style="background:var(--red)"></span>Flagged — check FQI</span>
+  <span><span class="dot" style="background:var(--highlight)"></span>Litres to add to the aircraft</span>
+  <span><span class="dot" style="background:#eceff1"></span>🔒 Locked (1hr after row completed)</span>
+</div>
+
+<div class="tableWrap">
+  <table id="mainTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Date</th>
+        <th>Time</th>
+        <th>FQI Before<span class="u">Kg</span></th>
+        <th>FQI Before<span class="u">Litres (auto)</span></th>
+        <th>Desired Fuel After<span class="u">Kg</span></th>
+        <th>Desired Fuel After<span class="u">Litres (auto)</span></th>
+        <th>Fuel Required<span class="u">Kg</span></th>
+        <th class="highlight">Fuel Required<span class="u">Litres (auto)</span></th>
+        <th>FQI After<span class="u">Kg</span></th>
+        <th>FQI After<span class="u">Litres (auto)</span></th>
+        <th>FOB Δ<span class="u">Kg</span></th>
+        <th>Discrepancy<span class="u">FOB Δ − Required (Kg)</span></th>
+        <th>% Check<span class="u">Discrepancy ÷ Required</span></th>
+        <th>Result</th>
+        <th>Signature</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<button class="btn add" id="addRowBtn">+ Add Refuel</button>
+
+<div class="toolbar">
+  <button class="btn" id="printBtn">Print / Save as PDF</button>
+</div>
+
+<div class="panel" style="font-size:11px;color:#555;">
+  <strong>Sending a completed sheet:</strong> tap <em>Print / Save as PDF</em>, then in the preview tap the Share icon and choose <strong>Mail</strong> to send the PDF as an attachment. At month end, email this PDF to <span id="recipDisplay"></span>.
+  <br><label style="display:block;margin-top:6px;font-weight:600;">Month-end recipient:
+    <input type="email" id="recipient" style="width:100%;max-width:320px;padding:6px;margin-top:3px;border:1px solid #999;border-radius:5px;">
+  </label>
+</div>
+
+<script>
+const STORAGE_KEY = 'fuelChecksheetDraft_v4_generic';
+const DEFAULT_ROW_COUNT = 20;
+
+let rows = [];
+let rowCounter = 0;
+
+const LOCK_DELAY_MS = 60*60*1000; // 1 hour
+
+function newRow(){
+  rowCounter++;
+  return { id: 'r'+rowCounter+'_'+Date.now()+'_'+Math.floor(Math.random()*1000),
+    date:'', time:'', beforeKg:'', desiredAfterKg:'', deliveredKg:'', afterKg:'', sigData:'', completedAt:null };
+}
+
+function isRowComplete(row){
+  return !!(row.date && row.time && row.beforeKg!=='' && row.deliveredKg!=='' && row.afterKg!=='' && row.sigData);
+}
+
+function isRowLocked(row){
+  return !!(row.completedAt && (Date.now() - row.completedAt) > LOCK_DELAY_MS);
+}
+
+function refreshCompletion(row){
+  if(isRowComplete(row)){
+    if(!row.completedAt) row.completedAt = Date.now();
+  } else {
+    // row became incomplete again (edited before lock) — only reset if not yet locked
+    if(row.completedAt && !isRowLocked(row)) row.completedAt = null;
+  }
+}
+
+function calc(row, kgTolerance, pctThreshold, density){
+  const beforeKgN = parseFloat(row.beforeKg),
+        deliveredKgN = parseFloat(row.deliveredKg), afterKgN = parseFloat(row.afterKg),
+        desiredAfterKgN = parseFloat(row.desiredAfterKg);
+  const beforeKg = isNaN(beforeKgN)?null:beforeKgN;
+  const deliveredKg = isNaN(deliveredKgN)?null:deliveredKgN;
+  const afterKg = isNaN(afterKgN)?null:afterKgN;
+  const desiredAfterKg = (row.desiredAfterKg!=='' && !isNaN(desiredAfterKgN)) ? desiredAfterKgN : null;
+  const beforeL = beforeKg==null?null:beforeKg/density;
+  const deliveredL = deliveredKg==null?null:deliveredKg/density;
+  const afterL = afterKg==null?null:afterKg/density;
+  const desiredAfterL = desiredAfterKg==null?null:desiredAfterKg/density;
+  // Fuel Required (Kg) is auto-calculated (and locked from manual edits) whenever
+  // Desired Fuel After (Kg) has a value: Fuel Required = Desired Fuel After − FQI Before.
+  const deliveredIsAuto = desiredAfterKg!=null;
+  const fobDeltaKg = (afterKg!=null && beforeKg!=null) ? (afterKg-beforeKg) : null;
+  const discrepKg = (fobDeltaKg!=null && deliveredKg!=null) ? (fobDeltaKg-deliveredKg) : null;
+
+  // A refuel is OK if EITHER the Kg check or the % check is within limits.
+  // It is only flagged for investigation if BOTH checks are out of limits.
+  let kgWithinLimit = null, pct = null, pctWithinLimit = null, status = null;
+  if(discrepKg!=null){
+    const absDiscrep = Math.abs(discrepKg);
+    kgWithinLimit = absDiscrep <= kgTolerance;
+    if(deliveredKg){
+      pct = discrepKg/deliveredKg*100;
+      pctWithinLimit = Math.abs(pct) <= pctThreshold;
+    }
+    status = (kgWithinLimit || pctWithinLimit === true) ? 'ok' : 'flag';
+  }
+  return {beforeKg,deliveredKg,afterKg,desiredAfterKg,beforeL,deliveredL,afterL,desiredAfterL,deliveredIsAuto,fobDeltaKg,discrepKg,kgWithinLimit,pct,pctWithinLimit,status};
+}
+
+function fmt(n, dp){
+  if(n===null || n===undefined || isNaN(n)) return '';
+  return n.toFixed(dp===undefined?1:dp);
+}
+
+function render(){
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 15;
+  const pctThreshold = parseFloat(document.getElementById('threshold').value) || 3;
+  const density = parseFloat(document.getElementById('specificGravity').value) || 0.79;
+
+  rows.forEach((row,i)=>{
+    refreshCompletion(row);
+    const c = calc(row, kgTolerance, pctThreshold, density);
+    const locked = isRowLocked(row);
+    const tr = document.createElement('tr');
+    if(locked) tr.classList.add('lockedRow');
+
+    const numTd = document.createElement('td');
+    numTd.className='rowNum';
+    numTd.innerHTML = (i+1) + (locked ? '<span class="lockTag">🔒 locked</span>' : '');
+    tr.appendChild(numTd);
+
+    tr.appendChild(inputCell(row,'date','date',locked));
+    tr.appendChild(inputCell(row,'time','time',locked));
+    tr.appendChild(inputCell(row,'beforeKg','number',locked));
+    tr.appendChild(calcCell(fmt(c.beforeL,1)));
+    tr.appendChild(inputCell(row,'desiredAfterKg','number',locked));
+    tr.appendChild(calcCell(fmt(c.desiredAfterL,1)));
+    tr.appendChild(inputCell(row,'deliveredKg','number',locked || c.deliveredIsAuto));
+    tr.appendChild(calcCell(fmt(c.deliveredL,1), 'highlight'));
+    tr.appendChild(inputCell(row,'afterKg','number',locked));
+    tr.appendChild(calcCell(fmt(c.afterL,1)));
+    tr.appendChild(calcCell(fmt(c.fobDeltaKg,1)));
+
+    // discrepancy (Kg) cell — colored by whether the Kg check alone is within limits
+    const discTd = document.createElement('td');
+    discTd.className='calc';
+    if(c.discrepKg==null){ discTd.textContent=''; }
+    else {
+      discTd.textContent = fmt(c.discrepKg,1);
+      discTd.classList.add(c.kgWithinLimit ? 'ok' : 'flagged');
+    }
+    tr.appendChild(discTd);
+
+    // % check cell — colored by whether the % check alone is within limits
+    const pctTd = document.createElement('td');
+    pctTd.className='calc';
+    if(c.pct==null){ pctTd.textContent=''; }
+    else {
+      pctTd.textContent = fmt(c.pct,1)+'%';
+      pctTd.classList.add(c.pctWithinLimit ? 'ok' : 'flagged');
+    }
+    tr.appendChild(pctTd);
+
+    // result cell — OK if EITHER check is within limits; flagged only if both fail
+    const resTd = document.createElement('td');
+    resTd.className='result';
+    if(c.status===null){ resTd.textContent=''; }
+    else if(c.status==='ok'){ resTd.textContent='OK'; resTd.classList.add('ok'); }
+    else { resTd.textContent='CHECK FQI'; resTd.classList.add('flagged'); }
+    tr.appendChild(resTd);
+
+    // signature
+    const sigTd = document.createElement('td');
+    sigTd.className='sigCell';
+    const canvas = document.createElement('canvas');
+    canvas.className='sigPad';
+    canvas.dataset.rowId = row.id;
+    sigTd.appendChild(canvas);
+    if(!locked){
+      const btnWrap = document.createElement('div');
+      btnWrap.className='sigBtns';
+      const clearBtn = document.createElement('button');
+      clearBtn.textContent='Clear';
+      clearBtn.type='button';
+      clearBtn.addEventListener('click', ()=>{ clearSig(canvas, row); });
+      btnWrap.appendChild(clearBtn);
+      sigTd.appendChild(btnWrap);
+    }
+    tr.appendChild(sigTd);
+    setTimeout(()=> initSigPad(canvas, row, locked), 0);
+
+    // remove row
+    const rmTd = document.createElement('td');
+    if(!locked){
+      const rmBtn = document.createElement('button');
+      rmBtn.className='removeBtn';
+      rmBtn.textContent='✕';
+      rmBtn.type='button';
+      rmBtn.addEventListener('click', ()=>{
+        rows = rows.filter(r=>r.id!==row.id);
+        render();
+        saveDraft();
+      });
+      rmTd.appendChild(rmBtn);
+    }
+    tr.appendChild(rmTd);
+
+    tbody.appendChild(tr);
+  });
+}
+
+function inputCell(row, field, type, disabled){
+  const td = document.createElement('td');
+  const input = document.createElement('input');
+  input.type = type;
+  if(type==='number') input.step='any';
+  input.value = row[field] || '';
+  input.dataset.rowId = row.id;
+  input.dataset.field = field;
+  if(disabled){ input.disabled = true; }
+  else { input.addEventListener('input', onFieldInput); }
+  td.appendChild(input);
+  return td;
+}
+
+function calcCell(text, extraClass){
+  const td = document.createElement('td');
+  td.className = extraClass ? 'calc '+extraClass : 'calc';
+  td.textContent = text;
+  return td;
+}
+
+function onFieldInput(e){
+  const row = rows.find(r=>r.id===e.target.dataset.rowId);
+  if(!row) return;
+  row[e.target.dataset.field] = e.target.value;
+
+  // Auto-calculate Fuel Required (Kg) = Desired Fuel After (Kg) − FQI Before (Kg)
+  if(e.target.dataset.field === 'desiredAfterKg' || e.target.dataset.field === 'beforeKg'){
+    const desiredN = parseFloat(row.desiredAfterKg);
+    const beforeN = parseFloat(row.beforeKg);
+    if(row.desiredAfterKg !== '' && !isNaN(desiredN) && !isNaN(beforeN)){
+      row.deliveredKg = (desiredN - beforeN).toFixed(1);
+    }
+  }
+
+  refreshCompletion(row);
+  render();
+  restoreFocus(e.target.dataset.rowId, e.target.dataset.field);
+  saveDraft();
+}
+
+function restoreFocus(rowId, field){
+  const el = document.querySelector('input[data-row-id="'+rowId+'"][data-field="'+field+'"]');
+  if(el){ el.focus(); const v=el.value; el.value=''; el.value=v; }
+}
+
+// --- signature pad ---
+function initSigPad(canvas, row, locked){
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width*ratio;
+  canvas.height = rect.height*ratio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio,ratio);
+  ctx.lineWidth = 1.6;
+  ctx.lineCap='round';
+  ctx.strokeStyle='#111';
+
+  if(row.sigData){
+    const img = new Image();
+    img.onload = ()=> ctx.drawImage(img,0,0,rect.width,rect.height);
+    img.src = row.sigData;
+  }
+
+  if(locked) return; // read-only, no drawing listeners
+
+  let drawing=false, lastX=0, lastY=0;
+  function pos(e){
+    const r = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return [t.clientX-r.left, t.clientY-r.top];
+  }
+  function start(e){ e.preventDefault(); drawing=true; [lastX,lastY]=pos(e); }
+  function move(e){
+    if(!drawing) return;
+    e.preventDefault();
+    const [x,y]=pos(e);
+    ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
+    [lastX,lastY]=[x,y];
+  }
+  function end(){
+    if(!drawing) return;
+    drawing=false;
+    row.sigData = canvas.toDataURL('image/png');
+    refreshCompletion(row);
+    saveDraft();
+    if(row.completedAt) render();
+  }
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, {passive:false});
+  canvas.addEventListener('touchmove', move, {passive:false});
+  canvas.addEventListener('touchend', end);
+}
+
+function clearSig(canvas, row){
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  row.sigData='';
+  refreshCompletion(row);
+  saveDraft();
+}
+
+// --- persistence ---
+function saveDraft(){
+  const data = {
+    rego: document.getElementById('rego').value,
+    operator: document.getElementById('operator').value,
+    sheetDate: document.getElementById('sheetDate').value,
+    notesText: document.getElementById('notesText').value,
+    threshold: document.getElementById('threshold').value,
+    kgTolerance: document.getElementById('kgTolerance').value,
+    specificGravity: document.getElementById('specificGravity').value,
+    recipient: document.getElementById('recipient').value,
+    rows: rows
+  };
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){}
+}
+
+function loadDraft(){
+  let data = null;
+  try{ data = JSON.parse(localStorage.getItem(STORAGE_KEY)); }catch(e){}
+  if(data){
+    document.getElementById('rego').value = data.rego||'';
+    document.getElementById('operator').value = data.operator||'';
+    document.getElementById('sheetDate').value = data.sheetDate||'';
+    document.getElementById('notesText').value = data.notesText || document.getElementById('notesText').value;
+    document.getElementById('threshold').value = data.threshold || 3;
+    document.getElementById('kgTolerance').value = data.kgTolerance || 15;
+    document.getElementById('specificGravity').value = data.specificGravity || '0.79';
+    document.getElementById('recipient').value = data.recipient || '';
+    rows = (data.rows && data.rows.length) ? data.rows : makeDefaultRows();
+  } else {
+    document.getElementById('recipient').value = '';
+    rows = makeDefaultRows();
+  }
+  document.getElementById('recipDisplay').textContent = document.getElementById('recipient').value;
+}
+
+function makeDefaultRows(){
+  const arr = [];
+  for(let i=0;i<DEFAULT_ROW_COUNT;i++){ arr.push(newRow()); }
+  return arr;
+}
+
+// --- toolbar actions ---
+document.getElementById('addRowBtn').addEventListener('click', ()=>{
+  rows.push(newRow());
+  render();
+  saveDraft();
+});
+
+document.getElementById('printBtn').addEventListener('click', ()=>{ window.print(); });
+
+document.getElementById('threshold').addEventListener('input', ()=>{ render(); saveDraft(); });
+document.getElementById('kgTolerance').addEventListener('input', ()=>{ render(); saveDraft(); });
+document.getElementById('specificGravity').addEventListener('change', ()=>{ render(); saveDraft(); });
+document.getElementById('notesText').addEventListener('input', saveDraft);
+['rego','operator','sheetDate','recipient'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=>{
+    saveDraft();
+    if(id==='recipient') document.getElementById('recipDisplay').textContent = document.getElementById('recipient').value;
+  });
+});
+
+// --- monthly report banner ---
+function monthKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function lastDayOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); }
+
+function checkMonthlyBanner(){
+  const today = new Date();
+  let sentMonths = [];
+  try{ sentMonths = JSON.parse(localStorage.getItem('monthlyEmailSentMonths_generic')||'[]'); }catch(e){}
+  const curKey = monthKey(today);
+  const isLastDay = today.getDate() === lastDayOfMonth(today);
+  const prevDate = new Date(today.getFullYear(), today.getMonth()-1, 1);
+  const prevKey = monthKey(prevDate);
+  let targetKey = null, targetLabel = null;
+  if(isLastDay && !sentMonths.includes(curKey)){
+    targetKey = curKey; targetLabel = today.toLocaleString('en-AU',{month:'long',year:'numeric'});
+  } else if(today.getDate() <= 5 && !sentMonths.includes(prevKey)){
+    targetKey = prevKey; targetLabel = prevDate.toLocaleString('en-AU',{month:'long',year:'numeric'});
+  }
+  const banner = document.getElementById('monthBanner');
+  let dismissedFor = null;
+  try{ dismissedFor = sessionStorage.getItem('monthBannerDismissed_generic'); }catch(e){}
+  if(targetKey && dismissedFor!==targetKey){
+    banner.style.display='flex';
+    document.getElementById('monthBannerText').textContent = "It's month-end — save this sheet as a PDF and email it to "+document.getElementById('recipient').value+" for "+targetLabel+". Once printing is done you'll be asked to confirm the sheet can be cleared for next month.";
+    banner.dataset.targetKey = targetKey;
+    banner.dataset.targetLabel = targetLabel;
+  } else {
+    banner.style.display='none';
+  }
+}
+
+let pendingClearAfterPrint = false;
+
+function sendMonthlyReport(targetKey, targetLabel){
+  // Opens the print dialog so the sheet can be saved as a PDF and shared to Mail from there.
+  // The sheet is only cleared once the print/share flow finishes (see the 'afterprint' listener below).
+  pendingClearAfterPrint = true;
+  window.print();
+
+  let sentMonths = [];
+  try{ sentMonths = JSON.parse(localStorage.getItem('monthlyEmailSentMonths_generic')||'[]'); }catch(e){}
+  if(!sentMonths.includes(targetKey)) sentMonths.push(targetKey);
+  try{ localStorage.setItem('monthlyEmailSentMonths_generic', JSON.stringify(sentMonths)); }catch(e){}
+  document.getElementById('monthBanner').style.display='none';
+}
+
+window.addEventListener('afterprint', ()=>{
+  if(!pendingClearAfterPrint) return;
+  pendingClearAfterPrint = false;
+  if(confirm("Have you finished emailing this month's PDF to the recipient above? Tap OK to clear the sheet for next month, or Cancel to keep this data.")){
+    rows = makeDefaultRows();
+    render();
+    saveDraft();
+    alert('Sheet cleared for the new month.');
+  }
+});
+
+document.getElementById('monthSendBtn').addEventListener('click', ()=>{
+  const banner = document.getElementById('monthBanner');
+  sendMonthlyReport(banner.dataset.targetKey, banner.dataset.targetLabel);
+});
+document.getElementById('monthDismissBtn').addEventListener('click', ()=>{
+  const banner = document.getElementById('monthBanner');
+  try{ sessionStorage.setItem('monthBannerDismissed_generic', banner.dataset.targetKey); }catch(e){}
+  banner.style.display='none';
+});
+
+// --- keep lock timers and month banner current while the page stays open ---
+function rerenderPreservingFocus(){
+  const active = document.activeElement;
+  const rowId = active && active.dataset ? active.dataset.rowId : null;
+  const field = active && active.dataset ? active.dataset.field : null;
+  render();
+  if(rowId && field) restoreFocus(rowId, field);
+}
+setInterval(()=>{ rerenderPreservingFocus(); checkMonthlyBanner(); }, 60000);
+
+loadDraft();
+render();
+checkMonthlyBanner();
+</script>
+</body>
+</html>
