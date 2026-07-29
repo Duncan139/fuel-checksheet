@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Fuel Quantity Checksheet</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fuel Check">
 <style>
@@ -122,6 +123,9 @@
     <label>Sheet Start Date
       <input type="date" id="sheetDate">
     </label>
+    <label>Device Name
+      <input type="text" id="deviceName" placeholder="e.g. iPad 1">
+    </label>
   </div>
 </div>
 
@@ -203,6 +207,39 @@
 <script>
 const STORAGE_KEY = 'fuelChecksheetDraft_v4_generic';
 const DEFAULT_ROW_COUNT = 20;
+
+// --- backend sync (Supabase) ---
+const SUPABASE_URL = 'https://ogtkccynaaavbbkacnjn.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_ckWPuUr5hasC2nPLuBtBUg_no-_TErd';
+const supabaseClient = (window.supabase && SUPABASE_URL)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+async function syncRowToBackend(row){
+  if(!supabaseClient) return;
+  const deviceNameEl = document.getElementById('deviceName');
+  const toNum = (v)=> (v==='' || v==null || isNaN(parseFloat(v))) ? null : parseFloat(v);
+  try{
+    await supabaseClient.from('refuels').upsert({
+      id: row.id,
+      aircraft_id: row.aircraft || null,
+      device_name: deviceNameEl ? deviceNameEl.value : null,
+      date: row.date || null,
+      time: row.time || null,
+      before_kg: toNum(row.beforeKg),
+      desired_after_kg: toNum(row.desiredAfterKg),
+      delivered_kg: toNum(row.deliveredKg),
+      after_kg: toNum(row.afterKg),
+      sig_data: row.sigData || null
+    });
+  }catch(e){
+    // offline or network error — will retry on next edit or periodic tick
+  }
+}
+
+function syncAllRows(){
+  rows.forEach(syncRowToBackend);
+}
 
 let rows = [];
 let rowCounter = 0;
@@ -434,6 +471,7 @@ function onFieldInput(e){
   render();
   restoreFocus(e.target.dataset.rowId, e.target.dataset.field);
   saveDraft();
+  syncRowToBackend(row);
 }
 
 function restoreFocus(rowId, field){
@@ -481,6 +519,7 @@ function initSigPad(canvas, row, locked){
     row.sigData = canvas.toDataURL('image/png');
     refreshCompletion(row);
     saveDraft();
+    syncRowToBackend(row);
     if(row.completedAt) render();
   }
   canvas.addEventListener('mousedown', start);
@@ -497,6 +536,7 @@ function clearSig(canvas, row){
   row.sigData='';
   refreshCompletion(row);
   saveDraft();
+  syncRowToBackend(row);
 }
 
 // --- persistence ---
@@ -509,6 +549,7 @@ function saveDraft(){
     kgTolerance: document.getElementById('kgTolerance').value,
     specificGravity: document.getElementById('specificGravity').value,
     recipient: document.getElementById('recipient').value,
+    deviceName: document.getElementById('deviceName').value,
     rows: rows
   };
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){}
@@ -525,6 +566,7 @@ function loadDraft(){
     document.getElementById('kgTolerance').value = data.kgTolerance || 15;
     document.getElementById('specificGravity').value = data.specificGravity || '0.79';
     document.getElementById('recipient').value = data.recipient || '';
+    document.getElementById('deviceName').value = data.deviceName || '';
     rows = (data.rows && data.rows.length) ? data.rows : makeDefaultRows();
   } else {
     document.getElementById('recipient').value = '';
@@ -552,7 +594,7 @@ document.getElementById('threshold').addEventListener('input', ()=>{ render(); s
 document.getElementById('kgTolerance').addEventListener('input', ()=>{ render(); saveDraft(); });
 document.getElementById('specificGravity').addEventListener('change', ()=>{ render(); saveDraft(); });
 document.getElementById('notesText').addEventListener('input', saveDraft);
-['operator','sheetDate','recipient'].forEach(id=>{
+['operator','sheetDate','recipient','deviceName'].forEach(id=>{
   document.getElementById(id).addEventListener('input', ()=>{
     saveDraft();
     if(id==='recipient') document.getElementById('recipDisplay').textContent = document.getElementById('recipient').value;
@@ -634,11 +676,12 @@ function rerenderPreservingFocus(){
   render();
   if(rowId && field) restoreFocus(rowId, field);
 }
-setInterval(()=>{ rerenderPreservingFocus(); checkMonthlyBanner(); }, 60000);
+setInterval(()=>{ rerenderPreservingFocus(); checkMonthlyBanner(); syncAllRows(); }, 60000);
 
 loadDraft();
 render();
 checkMonthlyBanner();
+syncAllRows();
 </script>
 </body>
 </html>
