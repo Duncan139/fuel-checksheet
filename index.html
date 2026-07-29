@@ -110,7 +110,7 @@
 <div class="monthBanner" id="monthBanner" style="display:none;">
   <p id="monthBannerText"></p>
   <div class="btns">
-    <button class="sendBtn" id="monthSendBtn">Print / Save as PDF</button>
+    <button class="sendBtn" id="monthSendBtn">Clear Sheet for New Month</button>
     <button class="dismissBtn" id="monthDismissBtn">Remind Me Later</button>
   </div>
 </div>
@@ -607,16 +607,16 @@ function lastDayOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0).
 
 function checkMonthlyBanner(){
   const today = new Date();
-  let sentMonths = [];
-  try{ sentMonths = JSON.parse(localStorage.getItem('monthlyEmailSentMonths_generic')||'[]'); }catch(e){}
+  let clearedMonths = [];
+  try{ clearedMonths = JSON.parse(localStorage.getItem('monthlyClearedMonths_generic')||'[]'); }catch(e){}
   const curKey = monthKey(today);
   const isLastDay = today.getDate() === lastDayOfMonth(today);
   const prevDate = new Date(today.getFullYear(), today.getMonth()-1, 1);
   const prevKey = monthKey(prevDate);
   let targetKey = null, targetLabel = null;
-  if(isLastDay && !sentMonths.includes(curKey)){
+  if(isLastDay && !clearedMonths.includes(curKey)){
     targetKey = curKey; targetLabel = today.toLocaleString('en-AU',{month:'long',year:'numeric'});
-  } else if(today.getDate() <= 5 && !sentMonths.includes(prevKey)){
+  } else if(today.getDate() <= 5 && !clearedMonths.includes(prevKey)){
     targetKey = prevKey; targetLabel = prevDate.toLocaleString('en-AU',{month:'long',year:'numeric'});
   }
   const banner = document.getElementById('monthBanner');
@@ -624,7 +624,7 @@ function checkMonthlyBanner(){
   try{ dismissedFor = sessionStorage.getItem('monthBannerDismissed_generic'); }catch(e){}
   if(targetKey && dismissedFor!==targetKey){
     banner.style.display='flex';
-    document.getElementById('monthBannerText').textContent = "It's month-end — save this sheet as a PDF and email it to "+document.getElementById('recipient').value+" for "+targetLabel+". Once printing is done you'll be asked to confirm the sheet can be cleared for next month.";
+    document.getElementById('monthBannerText').textContent = "It's month-end — this iPad's entries for "+targetLabel+" are already synced to the shared report. You can clear this device's local sheet to start fresh.";
     banner.dataset.targetKey = targetKey;
     banner.dataset.targetLabel = targetLabel;
   } else {
@@ -632,35 +632,25 @@ function checkMonthlyBanner(){
   }
 }
 
-let pendingClearAfterPrint = false;
-
-function sendMonthlyReport(targetKey, targetLabel){
-  // Opens the print dialog so the sheet can be saved as a PDF and shared to Mail from there.
-  // The sheet is only cleared once the print/share flow finishes (see the 'afterprint' listener below).
-  pendingClearAfterPrint = true;
-  window.print();
-
-  let sentMonths = [];
-  try{ sentMonths = JSON.parse(localStorage.getItem('monthlyEmailSentMonths_generic')||'[]'); }catch(e){}
-  if(!sentMonths.includes(targetKey)) sentMonths.push(targetKey);
-  try{ localStorage.setItem('monthlyEmailSentMonths_generic', JSON.stringify(sentMonths)); }catch(e){}
-  document.getElementById('monthBanner').style.display='none';
-}
-
-window.addEventListener('afterprint', ()=>{
-  if(!pendingClearAfterPrint) return;
-  pendingClearAfterPrint = false;
-  if(confirm("Have you finished emailing this month's PDF to the recipient above? Tap OK to clear the sheet for next month, or Cancel to keep this data.")){
-    rows = makeDefaultRows();
-    render();
-    saveDraft();
-    alert('Sheet cleared for the new month.');
+function clearForNewMonth(targetKey, targetLabel){
+  syncAllRows();
+  if(!confirm("Clear this iPad's local sheet for "+targetLabel+"? All entries are already saved in the shared report, so this only clears this device's view — nothing is lost.")){
+    return;
   }
-});
+  let clearedMonths = [];
+  try{ clearedMonths = JSON.parse(localStorage.getItem('monthlyClearedMonths_generic')||'[]'); }catch(e){}
+  if(!clearedMonths.includes(targetKey)) clearedMonths.push(targetKey);
+  try{ localStorage.setItem('monthlyClearedMonths_generic', JSON.stringify(clearedMonths)); }catch(e){}
+  rows = makeDefaultRows();
+  render();
+  saveDraft();
+  document.getElementById('monthBanner').style.display='none';
+  alert('Sheet cleared for the new month.');
+}
 
 document.getElementById('monthSendBtn').addEventListener('click', ()=>{
   const banner = document.getElementById('monthBanner');
-  sendMonthlyReport(banner.dataset.targetKey, banner.dataset.targetLabel);
+  clearForNewMonth(banner.dataset.targetKey, banner.dataset.targetLabel);
 });
 document.getElementById('monthDismissBtn').addEventListener('click', ()=>{
   const banner = document.getElementById('monthBanner');
