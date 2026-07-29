@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fuel Checksheet — Monthly Report</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --border:#333;
+    --bg:#fff;
+    --grey:#e8e8e8;
+    --red:#ffd6d6;
+    --redtext:#a30000;
+    --green:#e2f7e2;
+    --greentext:#0a6e0a;
+    --accent:#1a5fb4;
+    --highlight:#ffd966;
+    --highlighttext:#5c3d00;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    margin:0;padding:12px;background:#f2f2f2;color:#111;font-size:13px;
+  }
+  h1{font-size:18px;margin:0 0 12px 0;}
+  .panel{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:12px;}
+  .filterRow{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;}
+  .filterRow label{display:flex;flex-direction:column;font-size:11px;font-weight:600;color:#333;min-width:120px;}
+  .filterRow input, .filterRow select{margin-top:3px;padding:8px;font-size:14px;border:1px solid #999;border-radius:6px;}
+  .btn{padding:10px 16px;border:none;border-radius:8px;font-size:13px;font-weight:600;color:#fff;background:var(--accent);cursor:pointer;}
+  .btn.secondary{background:#555;}
+  .btn:disabled{background:#aaa;cursor:default;}
+  .summary{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;margin-top:10px;}
+  .summary b{font-size:15px;display:block;}
+  .tableWrap{overflow-x:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;}
+  table{border-collapse:collapse;width:100%;min-width:1100px;}
+  th,td{border:1px solid #bbb;padding:5px 4px;text-align:center;vertical-align:middle;font-size:11.5px;}
+  th{background:var(--grey);}
+  td.flagged{background:var(--red);color:var(--redtext);font-weight:700;}
+  td.ok{background:var(--green);color:var(--greentext);font-weight:700;}
+  td.sig img{max-height:32px;max-width:90px;}
+  .status{font-size:12px;color:#555;margin-top:8px;}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
+  @media print{
+    body{background:#fff;padding:0;font-size:9px;}
+    .panel:first-of-type, .toolbar{display:none !important;}
+    .panel,.tableWrap{border:1px solid #000;box-shadow:none;}
+    table{min-width:0;}
+  }
+</style>
+</head>
+<body>
+
+<h1>Fuel Checksheet — Monthly Report</h1>
+
+<div class="panel">
+  <div class="filterRow">
+    <label>Aircraft
+      <select id="aircraftFilter">
+        <option value="">All</option>
+        <option value="VH-IUJ">VH-IUJ</option>
+        <option value="VH-IUB">VH-IUB</option>
+      </select>
+    </label>
+    <label>Month
+      <input type="month" id="monthFilter">
+    </label>
+    <label>% threshold
+      <input type="number" id="threshold" value="3" step="0.1" min="0">
+    </label>
+    <label>Kg tolerance
+      <input type="number" id="kgTolerance" value="15" step="0.1" min="0">
+    </label>
+    <label>Specific gravity
+      <select id="specificGravity">
+        <option value="0.78">0.78</option>
+        <option value="0.79" selected>0.79</option>
+        <option value="0.80">0.80</option>
+        <option value="0.81">0.81</option>
+        <option value="0.82">0.82</option>
+      </select>
+    </label>
+    <button class="btn" id="loadBtn">Load Report</button>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="summary" id="summary"></div>
+</div>
+
+<div class="toolbar">
+  <button class="btn secondary" id="csvBtn" disabled>Export CSV</button>
+  <button class="btn secondary" id="printBtn" disabled>Print / Save as PDF</button>
+</div>
+
+<div class="tableWrap">
+  <table id="reportTable">
+    <thead>
+      <tr>
+        <th>Aircraft</th>
+        <th>Date</th>
+        <th>Time</th>
+        <th>Device</th>
+        <th>FQI Before (Kg)</th>
+        <th>Desired After (Kg)</th>
+        <th>Delivered (Kg)</th>
+        <th>FQI After (Kg)</th>
+        <th>FOB Δ (Kg)</th>
+        <th>Discrepancy (Kg)</th>
+        <th>% Check</th>
+        <th>Result</th>
+        <th>Signature</th>
+      </tr>
+    </thead>
+    <tbody id="reportBody"></tbody>
+  </table>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://ogtkccynaaavbbkacnjn.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_ckWPuUr5hasC2nPLuBtBUg_no-_TErd';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentRows = [];
+
+function fmt(n, dp){
+  if(n===null || n===undefined || isNaN(n)) return '';
+  return n.toFixed(dp===undefined?1:dp);
+}
+
+function calcRow(r, kgTolerance, pctThreshold, density){
+  const beforeKg = r.before_kg==null?null:Number(r.before_kg);
+  const deliveredKg = r.delivered_kg==null?null:Number(r.delivered_kg);
+  const afterKg = r.after_kg==null?null:Number(r.after_kg);
+  const fobDeltaKg = (afterKg!=null && beforeKg!=null) ? (afterKg-beforeKg) : null;
+  const discrepKg = (fobDeltaKg!=null && deliveredKg!=null) ? (fobDeltaKg-deliveredKg) : null;
+  let kgWithinLimit=null, pct=null, pctWithinLimit=null, status=null;
+  if(discrepKg!=null){
+    kgWithinLimit = Math.abs(discrepKg) <= kgTolerance;
+    if(deliveredKg){
+      pct = discrepKg/deliveredKg*100;
+      pctWithinLimit = Math.abs(pct) <= pctThreshold;
+    }
+    status = (kgWithinLimit || pctWithinLimit===true) ? 'ok' : 'flag';
+  }
+  return {fobDeltaKg, discrepKg, kgWithinLimit, pct, pctWithinLimit, status};
+}
+
+function defaultMonth(){
+  const d = new Date();
+  d.setMonth(d.getMonth()-1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+document.getElementById('monthFilter').value = defaultMonth();
+
+async function loadReport(){
+  const statusEl = document.getElementById('status');
+  const aircraft = document.getElementById('aircraftFilter').value;
+  const month = document.getElementById('monthFilter').value;
+  if(!month){ statusEl.textContent = 'Pick a month.'; return; }
+  const [y,m] = month.split('-').map(Number);
+  const startDate = month+'-01';
+  const endDate = new Date(y, m, 0).getDate();
+  const endDateStr = month+'-'+String(endDate).padStart(2,'0');
+
+  statusEl.textContent = 'Loading…';
+  document.getElementById('csvBtn').disabled = true;
+  document.getElementById('printBtn').disabled = true;
+
+  let query = supabaseClient.from('refuels').select('*').gte('date', startDate).lte('date', endDateStr).order('date',{ascending:true}).order('time',{ascending:true});
+  if(aircraft) query = query.eq('aircraft_id', aircraft);
+
+  const { data, error } = await query;
+  if(error){
+    statusEl.textContent = 'Error loading report: '+error.message;
+    return;
+  }
+  currentRows = data || [];
+  renderReport();
+  statusEl.textContent = currentRows.length+' entries loaded for '+month+(aircraft?(' — '+aircraft):' — all aircraft')+'.';
+  document.getElementById('csvBtn').disabled = currentRows.length===0;
+  document.getElementById('printBtn').disabled = currentRows.length===0;
+}
+
+function renderReport(){
+  const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 15;
+  const pctThreshold = parseFloat(document.getElementById('threshold').value) || 3;
+  const density = parseFloat(document.getElementById('specificGravity').value) || 0.79;
+  const tbody = document.getElementById('reportBody');
+  tbody.innerHTML = '';
+
+  let totalDelivered = 0, flaggedCount = 0;
+
+  currentRows.forEach(r=>{
+    const c = calcRow(r, kgTolerance, pctThreshold, density);
+    if(r.delivered_kg!=null) totalDelivered += Number(r.delivered_kg);
+    if(c.status==='flag') flaggedCount++;
+
+    const tr = document.createElement('tr');
+    const cells = [
+      r.aircraft_id||'', r.date||'', r.time||'', r.device_name||'',
+      fmt(r.before_kg), fmt(r.desired_after_kg), fmt(r.delivered_kg), fmt(r.after_kg),
+      fmt(c.fobDeltaKg), fmt(c.discrepKg)
+    ];
+    cells.forEach(text=>{
+      const td = document.createElement('td');
+      td.textContent = text;
+      tr.appendChild(td);
+    });
+
+    const pctTd = document.createElement('td');
+    if(c.pct!=null){ pctTd.textContent = fmt(c.pct,1)+'%'; pctTd.classList.add(c.pctWithinLimit?'ok':'flagged'); }
+    tr.appendChild(pctTd);
+
+    const resTd = document.createElement('td');
+    if(c.status==='ok'){ resTd.textContent='OK'; resTd.classList.add('ok'); }
+    else if(c.status==='flag'){ resTd.textContent='CHECK FQI'; resTd.classList.add('flagged'); }
+    tr.appendChild(resTd);
+
+    const sigTd = document.createElement('td');
+    sigTd.className='sig';
+    if(r.sig_data){
+      const img = document.createElement('img');
+      img.src = r.sig_data;
+      sigTd.appendChild(img);
+    }
+    tr.appendChild(sigTd);
+
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('summary').innerHTML =
+    '<div><b>'+currentRows.length+'</b>Total refuels</div>'+
+    '<div><b>'+fmt(totalDelivered,1)+' kg</b>Total fuel delivered</div>'+
+    '<div><b>'+flaggedCount+'</b>Flagged for investigation</div>';
+}
+
+function exportCsv(){
+  const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 15;
+  const pctThreshold = parseFloat(document.getElementById('threshold').value) || 3;
+  const density = parseFloat(document.getElementById('specificGravity').value) || 0.79;
+  const header = ['Aircraft','Date','Time','Device','FQI Before (Kg)','Desired After (Kg)','Delivered (Kg)','FQI After (Kg)','FOB Delta (Kg)','Discrepancy (Kg)','% Check','Result'];
+  const rows = currentRows.map(r=>{
+    const c = calcRow(r, kgTolerance, pctThreshold, density);
+    return [
+      r.aircraft_id||'', r.date||'', r.time||'', r.device_name||'',
+      fmt(r.before_kg), fmt(r.desired_after_kg), fmt(r.delivered_kg), fmt(r.after_kg),
+      fmt(c.fobDeltaKg), fmt(c.discrepKg),
+      c.pct!=null?fmt(c.pct,1)+'%':'',
+      c.status==='ok'?'OK':(c.status==='flag'?'CHECK FQI':'')
+    ];
+  });
+  const csvLines = [header, ...rows].map(row=>
+    row.map(v=>{
+      const s = String(v).replace(/"/g,'""');
+      return /[",\n]/.test(s) ? '"'+s+'"' : s;
+    }).join(',')
+  );
+  const csv = csvLines.join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const aircraft = document.getElementById('aircraftFilter').value || 'all';
+  const month = document.getElementById('monthFilter').value;
+  a.download = 'fuel-report_'+aircraft+'_'+month+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('loadBtn').addEventListener('click', loadReport);
+document.getElementById('csvBtn').addEventListener('click', exportCsv);
+document.getElementById('printBtn').addEventListener('click', ()=> window.print());
+
+loadReport();
+</script>
+</body>
+</html>
