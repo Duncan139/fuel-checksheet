@@ -138,8 +138,8 @@
    It is only flagged for investigation if BOTH the % and Kg checks are exceeded.
    Enter Desired Fuel After (Kg) to auto-calculate Fuel Required (Kg) = Desired Fuel After − FQI Before.
 4. A refuel row locks automatically 1 hour after every box in that row (including signature) has been completed.
-5. At month end, a banner prompts you to print/save the sheet as a PDF and email it to the recipient below.
-6. Once that PDF has been printed/shared, you'll be asked to confirm clearing the sheet to start the new month.</textarea>
+5. Every entry is synced automatically to the shared report once this device is online — no need to print or email anything.
+6. At month end, a banner lets you clear this device's local sheet to start fresh (your entries stay safe in the shared report either way).</textarea>
   <div class="thresholdRow">
     % threshold (OK if within this):
     <input type="number" id="threshold" value="3" step="0.1" min="0"> %
@@ -194,14 +194,11 @@
 <button class="btn add" id="addRowBtn">+ Add Refuel</button>
 
 <div class="toolbar">
-  <button class="btn" id="printBtn">Print / Save as PDF</button>
+  <button class="btn" id="clearSheetBtn">Clear Sheet</button>
 </div>
 
 <div class="panel" style="font-size:11px;color:#555;">
-  <strong>Sending a completed sheet:</strong> tap <em>Print / Save as PDF</em>, then in the preview tap the Share icon and choose <strong>Mail</strong> to send the PDF as an attachment. At month end, email this PDF to <span id="recipDisplay"></span>.
-  <br><label style="display:block;margin-top:6px;font-weight:600;">Month-end recipient:
-    <input type="email" id="recipient" style="width:100%;max-width:320px;padding:6px;margin-top:3px;border:1px solid #999;border-radius:5px;">
-  </label>
+  <strong>Automatic syncing:</strong> every entry you fill in is saved to this device and synced to the shared report whenever it's online — no need to print or email anything. Monthly reports can be generated from the report page by whoever needs them.
 </div>
 
 <script>
@@ -548,7 +545,6 @@ function saveDraft(){
     threshold: document.getElementById('threshold').value,
     kgTolerance: document.getElementById('kgTolerance').value,
     specificGravity: document.getElementById('specificGravity').value,
-    recipient: document.getElementById('recipient').value,
     deviceName: document.getElementById('deviceName').value,
     rows: rows
   };
@@ -565,14 +561,11 @@ function loadDraft(){
     document.getElementById('threshold').value = data.threshold || 3;
     document.getElementById('kgTolerance').value = data.kgTolerance || 15;
     document.getElementById('specificGravity').value = data.specificGravity || '0.79';
-    document.getElementById('recipient').value = data.recipient || '';
     document.getElementById('deviceName').value = data.deviceName || '';
     rows = (data.rows && data.rows.length) ? data.rows : makeDefaultRows();
   } else {
-    document.getElementById('recipient').value = '';
     rows = makeDefaultRows();
   }
-  document.getElementById('recipDisplay').textContent = document.getElementById('recipient').value;
 }
 
 function makeDefaultRows(){
@@ -588,17 +581,25 @@ document.getElementById('addRowBtn').addEventListener('click', ()=>{
   saveDraft();
 });
 
-document.getElementById('printBtn').addEventListener('click', ()=>{ window.print(); });
+function manualClearSheet(){
+  syncAllRows();
+  if(!confirm("Clear this iPad's local sheet? All synced entries are already saved in the shared report — this only clears this device's local view for a fresh start.")){
+    return;
+  }
+  rows = makeDefaultRows();
+  render();
+  saveDraft();
+  alert('Sheet cleared.');
+}
+
+document.getElementById('clearSheetBtn').addEventListener('click', manualClearSheet);
 
 document.getElementById('threshold').addEventListener('input', ()=>{ render(); saveDraft(); });
 document.getElementById('kgTolerance').addEventListener('input', ()=>{ render(); saveDraft(); });
 document.getElementById('specificGravity').addEventListener('change', ()=>{ render(); saveDraft(); });
 document.getElementById('notesText').addEventListener('input', saveDraft);
-['operator','sheetDate','recipient','deviceName'].forEach(id=>{
-  document.getElementById(id).addEventListener('input', ()=>{
-    saveDraft();
-    if(id==='recipient') document.getElementById('recipDisplay').textContent = document.getElementById('recipient').value;
-  });
+['operator','sheetDate','deviceName'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', saveDraft);
 });
 
 // --- monthly report banner ---
