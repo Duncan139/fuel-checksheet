@@ -72,15 +72,6 @@
     <label>Kg tolerance
       <input type="number" id="kgTolerance" value="15" step="0.1" min="0">
     </label>
-    <label>Specific gravity
-      <select id="specificGravity">
-        <option value="0.78">0.78</option>
-        <option value="0.79" selected>0.79</option>
-        <option value="0.80">0.80</option>
-        <option value="0.81">0.81</option>
-        <option value="0.82">0.82</option>
-      </select>
-    </label>
     <button class="btn" id="loadBtn">Load Report</button>
   </div>
   <div class="status" id="status"></div>
@@ -127,7 +118,7 @@ function fmt(n, dp){
   return n.toFixed(dp===undefined?1:dp);
 }
 
-function calcRow(r, kgTolerance, pctThreshold, density){
+function calcRow(r, kgTolerance, pctThreshold){
   const beforeKg = r.before_kg==null?null:Number(r.before_kg);
   const deliveredKg = r.delivered_kg==null?null:Number(r.delivered_kg);
   const afterKg = r.after_kg==null?null:Number(r.after_kg);
@@ -184,14 +175,13 @@ async function loadReport(){
 function renderReport(){
   const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 15;
   const pctThreshold = parseFloat(document.getElementById('threshold').value) || 3;
-  const density = parseFloat(document.getElementById('specificGravity').value) || 0.79;
   const tbody = document.getElementById('reportBody');
   tbody.innerHTML = '';
 
   let totalDelivered = 0, flaggedCount = 0;
 
   currentRows.forEach(r=>{
-    const c = calcRow(r, kgTolerance, pctThreshold, density);
+    const c = calcRow(r, kgTolerance, pctThreshold);
     if(r.delivered_kg!=null) totalDelivered += Number(r.delivered_kg);
     if(c.status==='flag') flaggedCount++;
 
@@ -237,10 +227,9 @@ function renderReport(){
 function exportCsv(){
   const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 15;
   const pctThreshold = parseFloat(document.getElementById('threshold').value) || 3;
-  const density = parseFloat(document.getElementById('specificGravity').value) || 0.79;
   const header = ['Aircraft','Date','Time','Device','FQI Before (Kg)','Desired After (Kg)','Delivered (Kg)','FQI After (Kg)','FOB Delta (Kg)','Discrepancy (Kg)','% Check','Result'];
   const rows = currentRows.map(r=>{
-    const c = calcRow(r, kgTolerance, pctThreshold, density);
+    const c = calcRow(r, kgTolerance, pctThreshold);
     return [
       r.aircraft_id||'', r.date||'', r.time||'', r.device_name||'',
       fmt(r.before_kg), fmt(r.desired_after_kg), fmt(r.delivered_kg), fmt(r.after_kg),
