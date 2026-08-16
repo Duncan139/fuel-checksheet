@@ -167,9 +167,9 @@ async function loadReport(){
   }
   currentRows = data || [];
   renderReport();
-  statusEl.textContent = currentRows.length+' entries loaded for '+month+(aircraft?(' — '+aircraft):' — all aircraft')+'.';
-  document.getElementById('csvBtn').disabled = currentRows.length===0;
-  document.getElementById('printBtn').disabled = currentRows.length===0;
+  statusEl.textContent = currentRows.length+' entries loaded for '+month+(aircraft?(' — '+aircraft):' — all aircraft')+'.'+(currentRows.length===0?' This is a blank/clean report for the period.':'');
+  document.getElementById('csvBtn').disabled = false;
+  document.getElementById('printBtn').disabled = false;
 }
 
 function renderReport(){
