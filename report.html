@@ -57,6 +57,7 @@
   .acRow td.val{text-align:left;}
   .acRow td.val span[contenteditable]{display:inline-block;min-width:60px;outline:none;}
   .acRow td.val span[contenteditable]:focus{background:#eef4ff;}
+  tr.printBlank{display:none;}
   .status{font-size:12px;color:#555;margin-top:8px;}
   .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
   @page{size:A4 landscape;margin:10mm;}
@@ -67,6 +68,13 @@
     .filterPanel, .toolbar{display:none !important;}
     .panel,.tableWrap{border:1px solid #000;box-shadow:none;}
     table{min-width:0;}
+    .tableWrap{border:none !important;border-radius:0;overflow:visible;}
+    #reportTable th, #reportTable td{border:1px solid #000 !important;padding:2px 3px;font-size:9.5px;}
+    #reportTable thead{display:table-header-group;}
+    #reportTable tbody tr{height:10mm;page-break-inside:avoid;break-inside:avoid;}
+    #reportTable td.sig{min-width:0;width:38mm;}
+    #reportTable td.sig img{max-height:9mm;max-width:36mm;}
+    tr.printBlank{display:table-row !important;}
   }
 </style>
 </head>
@@ -259,6 +267,19 @@ function renderReport(){
 
     tbody.appendChild(tr);
   });
+
+  // Blank ruled rows (print only) so the printed sheet fills the A4 page like the paper form
+  const FIRST_PAGE_ROWS = 14, NEXT_PAGE_ROWS = 17;
+  const n = currentRows.length;
+  let blanks;
+  if(n <= FIRST_PAGE_ROWS) blanks = FIRST_PAGE_ROWS - n;
+  else { const r = (n - FIRST_PAGE_ROWS) % NEXT_PAGE_ROWS; blanks = r ? NEXT_PAGE_ROWS - r : 0; }
+  for(let i=0;i<blanks;i++){
+    const tr = document.createElement('tr');
+    tr.className = 'printBlank';
+    for(let j=0;j<13;j++) tr.appendChild(document.createElement('td'));
+    tbody.appendChild(tr);
+  }
 
   document.getElementById('summary').innerHTML =
     '<div><b>'+currentRows.length+'</b>Total refuels</div>'+
