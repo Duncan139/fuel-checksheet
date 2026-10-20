@@ -116,10 +116,10 @@
       <input type="month" id="monthFilter">
     </label>
     <label>% threshold
-      <input type="number" id="threshold" value="3" step="0.1" min="0">
+      <input type="number" id="threshold" value="5" step="0.1" min="0">
     </label>
     <label>Kg tolerance
-      <input type="number" id="kgTolerance" value="15" step="0.1" min="0">
+      <input type="number" id="kgTolerance" value="20" step="0.1" min="0">
     </label>
     <button class="btn" id="loadBtn">Load Report</button>
   </div>
@@ -223,8 +223,8 @@ async function loadReport(){
 }
 
 function renderReport(){
-  const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 15;
-  const pctThreshold = parseFloat(document.getElementById('threshold').value) || 3;
+  const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 20;
+  const pctThreshold = parseFloat(document.getElementById('threshold').value) || 5;
   const tbody = document.getElementById('reportBody');
   tbody.innerHTML = '';
 
@@ -288,8 +288,8 @@ function renderReport(){
 }
 
 function exportCsv(){
-  const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 15;
-  const pctThreshold = parseFloat(document.getElementById('threshold').value) || 3;
+  const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 20;
+  const pctThreshold = parseFloat(document.getElementById('threshold').value) || 5;
   const header = ['Aircraft','Date','Time','Device','FQI Before (Kg)','Desired After (Kg)','Delivered (Kg)','FQI After (Kg)','FOB Delta (Kg)','Discrepancy (Kg)','% Check','Result'];
   const rows = currentRows.map(r=>{
     const c = calcRow(r, kgTolerance, pctThreshold);
