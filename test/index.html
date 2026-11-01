@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Fuel Quantity Checksheet</title>
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1a5fb4">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="auth.js"></script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Fuel TEST">
+<style>
+  :root{
+    --border:#333;
+    --bg:#fff;
+    --grey:#e8e8e8;
+    --red:#ffd6d6;
+    --redtext:#a30000;
+    --green:#e2f7e2;
+    --greentext:#0a6e0a;
+    --amber:#fff3cd;
+    --ambertext:#8a6300;
+    --accent:#1a5fb4;
+    --highlight:#ffd966;
+    --highlighttext:#5c3d00;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    margin:0;padding:12px;background:#f2f2f2;color:#111;font-size:13px;
+  }
+  h1{font-size:18px;margin:0 0 2px 0;}
+  .sub{color:#555;margin:0 0 12px 0;font-size:12px;}
+
+
+  .panel{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:12px;}
+  .headerRow{display:flex;flex-wrap:wrap;gap:10px;}
+  .headerRow label{display:flex;flex-direction:column;font-size:11px;font-weight:600;color:#333;flex:1;min-width:120px;}
+  .headerRow input{margin-top:3px;padding:8px;font-size:14px;border:1px solid #999;border-radius:6px;}
+
+  .notesBox{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:12px;}
+  .notesBox h2{font-size:13px;margin:0 0 6px 0;}
+  .notesBox textarea{width:100%;min-height:78px;font-size:12px;border:1px solid #ccc;border-radius:6px;padding:6px;font-family:inherit;}
+  .notesBox .thresholdRow{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;flex-wrap:wrap;}
+  .notesBox input[type=number]{width:70px;padding:5px;border:1px solid #999;border-radius:5px;}
+
+  .tableWrap{overflow-x:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;max-height:70vh;overflow-y:auto;}
+  table{border-collapse:collapse;width:100%;min-width:1420px;}
+  td select.aircraftSel{width:100%;height:36px;border:none;text-align:center;font-size:12.5px;padding:2px;background:transparent;min-width:78px;}
+  td select.aircraftSel:focus{outline:2px solid var(--accent);background:#eef4ff;}
+  th,td{border:1px solid #bbb;padding:0;text-align:center;vertical-align:middle;}
+  th{background:var(--grey);font-size:10.5px;padding:6px 3px;position:sticky;top:0;z-index:3;line-height:1.25;}
+  th .u{display:block;font-weight:400;color:#555;font-size:9.5px;}
+  td.rowNum{background:var(--grey);font-weight:600;font-size:11px;position:sticky;left:0;z-index:2;min-width:26px;}
+  td input[type=number], td input[type=text], td input[type=time], td input[type=date]{
+    width:100%;height:36px;border:none;text-align:center;font-size:12.5px;padding:2px;background:transparent;min-width:78px;
+  }
+  td input:focus{outline:2px solid var(--accent);background:#eef4ff;}
+  td.calc{background:#fafafa;color:#333;font-size:12px;font-weight:600;padding:4px 2px;min-width:70px;}
+  td.calc.flagged{background:var(--red);color:var(--redtext);}
+  td.calc.ok{background:var(--green);color:var(--greentext);}
+  td.calc.na{background:#f0f0f0;color:#999;font-weight:400;}
+  td.calc.highlight{background:var(--highlight);color:var(--highlighttext);font-weight:800;font-size:13px;}
+  th.highlight{background:var(--highlight);color:var(--highlighttext);}
+  td.result{font-size:11px;font-weight:700;min-width:110px;}
+  td.result.ok{background:var(--green);color:var(--greentext);}
+  td.result.flagged{background:var(--red);color:var(--redtext);}
+  .removeBtn{border:none;background:#c33;color:#fff;border-radius:4px;font-size:9px;padding:3px 5px;}
+
+  canvas.sigPad{width:100%;height:96px;touch-action:none;background:#fff;border:1px dashed #999;display:block;}
+  .sigCell{padding:4px;min-width:220px;}
+  .sigBtns{display:flex;gap:4px;justify-content:center;margin-top:2px;}
+  .sigBtns button{font-size:12px;padding:5px 12px;border:1px solid #999;border-radius:4px;background:#f5f5f5;}
+
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;position:sticky;bottom:0;background:#f2f2f2;padding:8px 0;}
+  .btn{
+    flex:1;min-width:140px;padding:12px;border:none;border-radius:8px;font-size:14px;font-weight:600;
+    color:#fff;background:var(--accent);cursor:pointer;
+  }
+  .btn.secondary{background:#555;}
+  .btn.add{background:#2a8f3f;flex:0 0 auto;min-width:auto;padding:10px 16px;font-size:13px;}
+  .btn.danger{background:#a30000;}
+
+  .legend{display:flex;gap:14px;font-size:11px;margin:6px 2px;color:#444;flex-wrap:wrap;}
+  .legend span.dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;}
+
+  tr.lockedRow td.calc, tr.lockedRow td.rowNum{background:#eceff1;}
+  tr.lockedRow input{background:#eceff1;color:#555;}
+  tr.lockedRow .sigPad{opacity:0.7;}
+  .lockTag{font-size:8.5px;color:#607d8b;display:block;font-weight:400;}
+
+  .monthBanner{background:#fff8e1;border:1px solid #e0b400;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  .monthBanner p{margin:0;font-size:12px;color:#5c4a00;flex:1;min-width:200px;}
+  .monthBanner .btns{display:flex;gap:8px;}
+  .monthBanner button{padding:8px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;}
+  .monthBanner .sendBtn{background:#164a34;color:#fff;}
+  .monthBanner .dismissBtn{background:#ddd;color:#333;}
+
+  /* Phones: each refuel becomes a card instead of a wide table row */
+  @media screen and (max-width:760px){
+    body{padding:10px 10px calc(10px + env(safe-area-inset-bottom));}
+    .notesBox textarea{min-height:60px;}
+    .tableWrap{max-height:none;overflow:visible;border:none;background:transparent;}
+    table{min-width:0;}
+    #mainTable thead{display:none;}
+    #mainTable, #mainTable tbody, #mainTable tr, #mainTable td{display:block;width:100%;}
+    #mainTable tr{background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden;position:relative;}
+    #mainTable tr.emptyRow ~ tr.emptyRow{display:none;}
+    #mainTable td{border:none;border-bottom:1px solid #e3e3e3;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 10px;min-height:44px;text-align:right;}
+    #mainTable td::before{content:attr(data-label);font-size:12px;font-weight:600;color:#444;text-align:left;flex:0 0 46%;}
+    #mainTable td.rowNum{position:static;justify-content:flex-start;font-size:13px;min-height:34px;background:var(--grey);}
+    #mainTable td.rowNum::before{flex:0 0 auto;}
+    #mainTable td input, #mainTable td select.aircraftSel{flex:1;min-width:0;text-align:right;font-size:16px;height:40px;border:1px solid #bbb;border-radius:6px;padding:4px 8px;background:#fff;}
+    #mainTable td input:disabled, #mainTable td select:disabled{background:#f0f0f0;border-color:#ddd;}
+    #mainTable td.calc, #mainTable td.result{font-size:14px;}
+    #mainTable td.sigCell{display:block;text-align:left;}
+    #mainTable td.sigCell::before{display:block;margin:4px 0 6px;}
+    #mainTable canvas.sigPad{height:140px;}
+    #mainTable td.rmCell{position:absolute;top:0;right:0;left:auto;width:auto;border:none;min-height:34px;padding:0 8px;background:transparent;}
+    #mainTable td.rmCell::before{content:none;}
+    .removeBtn{font-size:12px;padding:5px 9px;}
+    .toolbar{position:static;}
+    .toolbar .btn{min-width:0;}
+  }
+
+  @media print{
+    body{background:#fff;padding:0;font-size:9px;}
+    .toolbar,.notesBox .thresholdRow,.removeBtn,.sigBtns,.add,.monthBanner{display:none !important;}
+    .panel,.notesBox,.tableWrap{border:1px solid #000;box-shadow:none;max-height:none;overflow:visible;}
+    table{min-width:0;}
+  }
+</style>
+</head>
+<body>
+
+<div style="background:#a30000;color:#fff;font-weight:700;text-align:center;padding:6px;border-radius:6px;margin-bottom:8px;">TEST VERSION — entries go to the real report; put TEST in Device Name</div>
+<h1>Fuel Quantity Checksheet</h1>
+<p class="sub">Digital version — one row per refuel. Fill in each refuel and sign; entries sync automatically.</p>
+
+<div class="monthBanner" id="monthBanner" style="display:none;">
+  <p id="monthBannerText"></p>
+  <div class="btns">
+    <button class="sendBtn" id="monthSendBtn">Clear Sheet for New Month</button>
+    <button class="dismissBtn" id="monthDismissBtn">Remind Me Later</button>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="headerRow">
+    <label>Base
+      <input type="text" id="operator" placeholder="Base">
+    </label>
+    <label>Sheet Start Date
+      <input type="date" id="sheetDate">
+    </label>
+    <label>Device Name
+      <input type="text" id="deviceName" placeholder="e.g. iPad 1">
+    </label>
+  </div>
+</div>
+
+<div class="notesBox">
+  <h2>Notes</h2>
+  <textarea id="notesText">1. FQI After Refuel − FQI Before Refuel = FOB Δ (Kg)
+2. Kg ÷ Specific Gravity = Litres (specific gravity selectable 0.78–0.82, default 0.79 — all fuel entered in Kg as shown on the aircraft FQI)
+3. Discrepancy = FOB Δ − Fuel Required (Kg).
+   A refuel is OK if EITHER the % check or the Kg check is within limits.
+   It is only flagged for investigation if BOTH the % and Kg checks are exceeded.
+   Enter Desired Fuel After (Kg) to auto-calculate Fuel Required (Kg) = Desired Fuel After − FQI Before.
+4. A refuel row locks automatically 1 hour after every box in that row (including signature) has been completed.
+5. Every entry is synced automatically to the shared report once this device is online — no need to print or email anything.
+6. At month end, a banner lets you clear this device's local sheet to start fresh (your entries stay safe in the shared report either way).</textarea>
+  <div class="thresholdRow">
+    % threshold (OK if within this):
+    <input type="number" id="threshold" value="5" step="0.1" min="0"> %
+    &nbsp;|&nbsp; Kg tolerance (OK if within this):
+    <input type="number" id="kgTolerance" value="20" step="0.1" min="0"> kg
+    &nbsp;|&nbsp; Fuel specific gravity:
+    <select id="specificGravity">
+      <option value="0.78">0.78</option>
+      <option value="0.79" selected>0.79</option>
+      <option value="0.80">0.80</option>
+      <option value="0.81">0.81</option>
+      <option value="0.82">0.82</option>
+    </select>
+  </div>
+</div>
+
+<div class="legend">
+  <span><span class="dot" style="background:var(--green)"></span>OK</span>
+  <span><span class="dot" style="background:var(--red)"></span>Flagged — check FQI</span>
+  <span><span class="dot" style="background:var(--highlight)"></span>Litres to add to the aircraft</span>
+  <span><span class="dot" style="background:#eceff1"></span>🔒 Locked (1hr after row completed)</span>
+</div>
+
+<div class="tableWrap">
+  <table id="mainTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Aircraft</th>
+        <th>Date</th>
+        <th>Time</th>
+        <th>FQI Before<span class="u">Kg</span></th>
+        <th>FQI Before<span class="u">Litres (auto)</span></th>
+        <th>Desired Fuel After<span class="u">Kg</span></th>
+        <th>Desired Fuel After<span class="u">Litres (auto)</span></th>
+        <th>Fuel Required<span class="u">Kg</span></th>
+        <th class="highlight">Fuel Required<span class="u">Litres (auto)</span></th>
+        <th>FQI After<span class="u">Kg</span></th>
+        <th>FQI After<span class="u">Litres (auto)</span></th>
+        <th>FOB Δ<span class="u">Kg</span></th>
+        <th>Discrepancy<span class="u">FOB Δ − Required (Kg)</span></th>
+        <th>% Check<span class="u">Discrepancy ÷ Required</span></th>
+        <th>Result</th>
+        <th>Signature</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<button class="btn add" id="addRowBtn">+ Add Refuel</button>
+
+<div class="toolbar">
+  <button class="btn" id="clearSheetBtn">Clear Sheet</button>
+</div>
+
+<div class="panel" style="font-size:11px;color:#555;">
+  <strong>Automatic syncing:</strong> every entry you fill in is saved to this device and synced to the shared report whenever it's online — no need to print or email anything. Monthly reports can be generated from the report page by whoever needs them.
+</div>
+
+<script>
+const STORAGE_KEY = 'fuelChecksheetDraft_v4_TEST';
+const DEFAULT_ROW_COUNT = 20;
+
+// --- backend sync (Supabase, signed-in crew only) ---
+// AUTH is set once the person signs in (see FuelAuth.start at the bottom).
+// Entries are always kept on this device first; anything not yet sent is retried every minute.
+let AUTH = null;
+let SESSION_OK = false;
+
+function rowPayload(row){
+  const deviceNameEl = document.getElementById('deviceName');
+  const toNum = (v)=> (v==='' || v==null || isNaN(parseFloat(v))) ? null : parseFloat(v);
+  return {
+    id: row.id,
+    aircraft_id: row.aircraft || null,
+    device_name: deviceNameEl ? (deviceNameEl.value || null) : null,
+    date: row.date || null,
+    time: row.time || null,
+    before_kg: toNum(row.beforeKg),
+    desired_after_kg: toNum(row.desiredAfterKg),
+    delivered_kg: toNum(row.deliveredKg),
+    after_kg: toNum(row.afterKg),
+    sig_data: row.sigData || null
+  };
+}
+
+function rowNeedsSync(row){
+  if(!row.aircraft || row._syncClosed) return false; // aircraft is required before a record can be saved
+  return row._syncedSig !== JSON.stringify(rowPayload(row));
+}
+
+async function refreshSession(){
+  if(!AUTH) return false;
+  try{
+    const { data } = await AUTH.client.auth.getSession();
+    SESSION_OK = !!(data && data.session);
+  }catch(e){ SESSION_OK = false; }
+  return SESSION_OK;
+}
+
+async function syncRowToBackend(row){
+  if(!AUTH || !SESSION_OK || !AUTH.isCrew) { updateSyncStatus(); return; }
+  if(!rowNeedsSync(row)) return;
+  const payload = rowPayload(row);
+  const sig = JSON.stringify(payload);
+  let error = null;
+  try{
+    const res = await AUTH.client.from('refuels').upsert(payload, { returning: 'minimal' });
+    error = res.error;
+  }catch(e){ error = { message: String(e) }; }
+  if(!error){
+    row._syncedSig = sig;
+  } else if(error.code === '42501'){
+    // Permission refused: either this record is already in the shared report and closed for edits,
+    // or this person has been taken off the crew list. Check which before giving up on the row.
+    let stillCrew = true;
+    try{ const r = await AUTH.client.rpc('fuel_is_crew'); stillCrew = r.data !== false; }catch(e){}
+    if(stillCrew) row._syncClosed = true;
+    else AUTH.isCrew = false;
+  }
+  // any other error (offline, timeout) — left pending and retried on the next tick
+  saveDraft();
+  updateSyncStatus();
+}
+
+let syncing = false;
+async function syncAllRows(){
+  if(syncing || !AUTH) { updateSyncStatus(); return; }
+  syncing = true;
+  try{
+    await refreshSession();
+    for(const row of rows){ await syncRowToBackend(row); }
+  } finally { syncing = false; updateSyncStatus(); }
+}
+
+function pendingCount(){ return rows.filter(rowNeedsSync).length; }
+
+function updateSyncStatus(){
+  const el = document.getElementById('fuelSyncStatus');
+  if(!el) return;
+  const n = pendingCount();
+  if(AUTH && !AUTH.isCrew){
+    el.className='sync err';
+    el.textContent='⚠ Your email isn\'t on the crew list yet — entries are kept on this device until your base manager adds you.';
+  } else if(AUTH && !SESSION_OK){
+    el.className='sync err';
+    el.innerHTML='⚠ Sign in again to send '+n+' entr'+(n===1?'y':'ies')+'. ';
+    const b=document.createElement('button'); b.textContent='Sign in'; b.type='button';
+    b.addEventListener('click', ()=>location.reload()); el.appendChild(b);
+  } else if(n===0){
+    el.className='sync ok'; el.textContent='✓ All entries sent';
+  } else {
+    el.className='sync wait';
+    el.textContent='⏳ '+n+' entr'+(n===1?'y':'ies')+' waiting to send'+(navigator.onLine===false?' (offline)':'');
+  }
+}
+window.addEventListener('online', ()=>{ syncAllRows(); });
+window.addEventListener('offline', updateSyncStatus);
+
+let rows = [];
+let rowCounter = 0;
+
+const LOCK_DELAY_MS = 60*60*1000; // 1 hour
+
+function newRow(){
+  rowCounter++;
+  return { id: 'r'+rowCounter+'_'+Date.now()+'_'+Math.floor(Math.random()*1000),
+    aircraft:'', date:'', time:'', beforeKg:'', desiredAfterKg:'', deliveredKg:'', afterKg:'', sigData:'', completedAt:null };
+}
+
+const AIRCRAFT_OPTIONS = ['VH-IUJ','VH-IUB'];
+
+function isRowComplete(row){
+  return !!(row.aircraft && row.date && row.time && row.beforeKg!=='' && row.deliveredKg!=='' && row.afterKg!=='' && row.sigData);
+}
+
+function isRowLocked(row){
+  return !!(row.completedAt && (Date.now() - row.completedAt) > LOCK_DELAY_MS);
+}
+
+function refreshCompletion(row){
+  if(isRowComplete(row)){
+    if(!row.completedAt) row.completedAt = Date.now();
+  } else {
+    // row became incomplete again (edited before lock) — only reset if not yet locked
+    if(row.completedAt && !isRowLocked(row)) row.completedAt = null;
+  }
+}
+
+function calc(row, kgTolerance, pctThreshold, density){
+  const beforeKgN = parseFloat(row.beforeKg),
+        deliveredKgN = parseFloat(row.deliveredKg), afterKgN = parseFloat(row.afterKg),
+        desiredAfterKgN = parseFloat(row.desiredAfterKg);
+  const beforeKg = isNaN(beforeKgN)?null:beforeKgN;
+  const deliveredKg = isNaN(deliveredKgN)?null:deliveredKgN;
+  const afterKg = isNaN(afterKgN)?null:afterKgN;
+  const desiredAfterKg = (row.desiredAfterKg!=='' && !isNaN(desiredAfterKgN)) ? desiredAfterKgN : null;
+  const beforeL = beforeKg==null?null:beforeKg/density;
+  const deliveredL = deliveredKg==null?null:deliveredKg/density;
+  const afterL = afterKg==null?null:afterKg/density;
+  const desiredAfterL = desiredAfterKg==null?null:desiredAfterKg/density;
+  // Fuel Required (Kg) is auto-calculated (and locked from manual edits) whenever
+  // Desired Fuel After (Kg) has a value: Fuel Required = Desired Fuel After − FQI Before.
+  const deliveredIsAuto = desiredAfterKg!=null;
+  const fobDeltaKg = (afterKg!=null && beforeKg!=null) ? (afterKg-beforeKg) : null;
+  const discrepKg = (fobDeltaKg!=null && deliveredKg!=null) ? (fobDeltaKg-deliveredKg) : null;
+
+  // A refuel is OK if EITHER the Kg check or the % check is within limits.
+  // It is only flagged for investigation if BOTH checks are out of limits.
+  let kgWithinLimit = null, pct = null, pctWithinLimit = null, status = null;
+  if(discrepKg!=null){
+    const absDiscrep = Math.abs(discrepKg);
+    kgWithinLimit = absDiscrep <= kgTolerance;
+    if(deliveredKg){
+      pct = discrepKg/deliveredKg*100;
+      pctWithinLimit = Math.abs(pct) <= pctThreshold;
+    }
+    status = (kgWithinLimit || pctWithinLimit === true) ? 'ok' : 'flag';
+  }
+  return {beforeKg,deliveredKg,afterKg,desiredAfterKg,beforeL,deliveredL,afterL,desiredAfterL,deliveredIsAuto,fobDeltaKg,discrepKg,kgWithinLimit,pct,pctWithinLimit,status};
+}
+
+function fmt(n, dp){
+  if(n===null || n===undefined || isNaN(n)) return '';
+  return n.toFixed(dp===undefined?1:dp);
+}
+
+function render(){
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 20;
+  const pctThreshold = parseFloat(document.getElementById('threshold').value) || 5;
+  const density = parseFloat(document.getElementById('specificGravity').value) || 0.79;
+
+  rows.forEach((row,i)=>{
+    refreshCompletion(row);
+    const c = calc(row, kgTolerance, pctThreshold, density);
+    const locked = isRowLocked(row);
+    const tr = document.createElement('tr');
+    if(locked) tr.classList.add('lockedRow');
+
+    const numTd = document.createElement('td');
+    numTd.className='rowNum';
+    numTd.innerHTML = (i+1) + (locked ? '<span class="lockTag">🔒 locked</span>' : '');
+    tr.appendChild(numTd);
+
+    tr.appendChild(aircraftCell(row,locked));
+    tr.appendChild(inputCell(row,'date','date',locked));
+    tr.appendChild(inputCell(row,'time','time',locked));
+    tr.appendChild(inputCell(row,'beforeKg','number',locked));
+    tr.appendChild(calcCell(fmt(c.beforeL,1)));
+    tr.appendChild(inputCell(row,'desiredAfterKg','number',locked));
+    tr.appendChild(calcCell(fmt(c.desiredAfterL,1)));
+    tr.appendChild(inputCell(row,'deliveredKg','number',locked || c.deliveredIsAuto));
+    tr.appendChild(calcCell(fmt(c.deliveredL,1), 'highlight'));
+    tr.appendChild(inputCell(row,'afterKg','number',locked));
+    tr.appendChild(calcCell(fmt(c.afterL,1)));
+    tr.appendChild(calcCell(fmt(c.fobDeltaKg,1)));
+
+    // discrepancy (Kg) cell — colored by whether the Kg check alone is within limits
+    const discTd = document.createElement('td');
+    discTd.className='calc';
+    if(c.discrepKg==null){ discTd.textContent=''; }
+    else {
+      discTd.textContent = fmt(c.discrepKg,1);
+      discTd.classList.add(c.kgWithinLimit ? 'ok' : 'flagged');
+    }
+    tr.appendChild(discTd);
+
+    // % check cell — colored by whether the % check alone is within limits
+    const pctTd = document.createElement('td');
+    pctTd.className='calc';
+    if(c.pct==null){ pctTd.textContent=''; }
+    else {
+      pctTd.textContent = fmt(c.pct,1)+'%';
+      pctTd.classList.add(c.pctWithinLimit ? 'ok' : 'flagged');
+    }
+    tr.appendChild(pctTd);
+
+    // result cell — OK if EITHER check is within limits; flagged only if both fail
+    const resTd = document.createElement('td');
+    resTd.className='result';
+    if(c.status===null){ resTd.textContent=''; }
+    else if(c.status==='ok'){ resTd.textContent='OK'; resTd.classList.add('ok'); }
+    else { resTd.textContent='CHECK FQI'; resTd.classList.add('flagged'); }
+    tr.appendChild(resTd);
+
+    // signature
+    const sigTd = document.createElement('td');
+    sigTd.className='sigCell';
+    const canvas = document.createElement('canvas');
+    canvas.className='sigPad';
+    canvas.dataset.rowId = row.id;
+    sigTd.appendChild(canvas);
+    if(!locked){
+      const btnWrap = document.createElement('div');
+      btnWrap.className='sigBtns';
+      const clearBtn = document.createElement('button');
+      clearBtn.textContent='Clear';
+      clearBtn.type='button';
+      clearBtn.addEventListener('click', ()=>{ clearSig(canvas, row); });
+      btnWrap.appendChild(clearBtn);
+      sigTd.appendChild(btnWrap);
+    }
+    tr.appendChild(sigTd);
+    setTimeout(()=> initSigPad(canvas, row, locked), 0);
+
+    // remove row
+    const rmTd = document.createElement('td');
+    if(!locked){
+      const rmBtn = document.createElement('button');
+      rmBtn.className='removeBtn';
+      rmBtn.textContent='✕';
+      rmBtn.type='button';
+      rmBtn.addEventListener('click', ()=>{
+        rows = rows.filter(r=>r.id!==row.id);
+        render();
+        saveDraft();
+      });
+      rmTd.appendChild(rmBtn);
+    }
+    rmTd.className = 'rmCell';
+    tr.appendChild(rmTd);
+
+    // labels for the phone card layout
+    Array.from(tr.children).forEach((td,j)=>{ if(CELL_LABELS[j]) td.dataset.label = CELL_LABELS[j]; });
+    numTd.dataset.label = 'Refuel';
+    if(!locked && isRowEmpty(row)) tr.classList.add('emptyRow');
+
+    tbody.appendChild(tr);
+  });
+}
+
+const CELL_LABELS = ['Refuel','Aircraft','Date','Time','FQI Before (Kg)','FQI Before (L)','Desired Fuel After (Kg)','Desired Fuel After (L)',
+  'Fuel Required (Kg)','Fuel Required (L) — add this','FQI After (Kg)','FQI After (L)','FOB Δ (Kg)','Discrepancy (Kg)','% Check','Result','Signature',''];
+
+function isRowEmpty(row){
+  return !(row.aircraft || row.date || row.time || row.beforeKg || row.desiredAfterKg || row.deliveredKg || row.afterKg || row.sigData);
+}
+
+function aircraftCell(row, disabled){
+  const td = document.createElement('td');
+  const select = document.createElement('select');
+  select.className = 'aircraftSel';
+  select.dataset.rowId = row.id;
+  select.dataset.field = 'aircraft';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Select…';
+  select.appendChild(placeholder);
+  AIRCRAFT_OPTIONS.forEach(reg=>{
+    const opt = document.createElement('option');
+    opt.value = reg;
+    opt.textContent = reg;
+    if(row.aircraft === reg) opt.selected = true;
+    select.appendChild(opt);
+  });
+  if(disabled){ select.disabled = true; }
+  else { select.addEventListener('change', onFieldInput); }
+  td.appendChild(select);
+  return td;
+}
+
+function inputCell(row, field, type, disabled){
+  const td = document.createElement('td');
+  const input = document.createElement('input');
+  input.type = type;
+  if(type==='number') input.step='any';
+  input.value = row[field] || '';
+  input.dataset.rowId = row.id;
+  input.dataset.field = field;
+  if(disabled){ input.disabled = true; }
+  else { input.addEventListener('input', onFieldInput); }
+  td.appendChild(input);
+  return td;
+}
+
+function calcCell(text, extraClass){
+  const td = document.createElement('td');
+  td.className = extraClass ? 'calc '+extraClass : 'calc';
+  td.textContent = text;
+  return td;
+}
+
+function onFieldInput(e){
+  const row = rows.find(r=>r.id===e.target.dataset.rowId);
+  if(!row) return;
+  row[e.target.dataset.field] = e.target.value;
+
+  // Auto-calculate Fuel Required (Kg) = Desired Fuel After (Kg) − FQI Before (Kg)
+  if(e.target.dataset.field === 'desiredAfterKg' || e.target.dataset.field === 'beforeKg'){
+    const desiredN = parseFloat(row.desiredAfterKg);
+    const beforeN = parseFloat(row.beforeKg);
+    if(row.desiredAfterKg !== '' && !isNaN(desiredN) && !isNaN(beforeN)){
+      row.deliveredKg = (desiredN - beforeN).toFixed(1);
+    }
+  }
+
+  refreshCompletion(row);
+  render();
+  restoreFocus(e.target.dataset.rowId, e.target.dataset.field);
+  saveDraft();
+  syncRowToBackend(row);
+}
+
+function restoreFocus(rowId, field){
+  const el = document.querySelector('input[data-row-id="'+rowId+'"][data-field="'+field+'"]');
+  if(el){ el.focus(); const v=el.value; el.value=''; el.value=v; }
+}
+
+// --- signature pad ---
+function initSigPad(canvas, row, locked){
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width*ratio;
+  canvas.height = rect.height*ratio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio,ratio);
+  ctx.lineWidth = 2;
+  ctx.lineCap='round';
+  ctx.strokeStyle='#111';
+
+  if(row.sigData){
+    const img = new Image();
+    img.onload = ()=>{
+      // fit without stretching (older signatures were captured on a smaller pad)
+      const iw = img.width/ratio, ih = img.height/ratio;
+      const k = Math.min(rect.width/iw, rect.height/ih);
+      ctx.drawImage(img, 0, 0, iw*k, ih*k);
+    };
+    img.src = row.sigData;
+  }
+
+  if(locked) return; // read-only, no drawing listeners
+
+  let drawing=false, lastX=0, lastY=0;
+  function pos(e){
+    const r = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return [t.clientX-r.left, t.clientY-r.top];
+  }
+  function start(e){ e.preventDefault(); drawing=true; [lastX,lastY]=pos(e); }
+  function move(e){
+    if(!drawing) return;
+    e.preventDefault();
+    const [x,y]=pos(e);
+    ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
+    [lastX,lastY]=[x,y];
+  }
+  function end(){
+    if(!drawing) return;
+    drawing=false;
+    row.sigData = canvas.toDataURL('image/png');
+    refreshCompletion(row);
+    saveDraft();
+    syncRowToBackend(row);
+    if(row.completedAt) render();
+  }
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, {passive:false});
+  canvas.addEventListener('touchmove', move, {passive:false});
+  canvas.addEventListener('touchend', end);
+}
+
+function clearSig(canvas, row){
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  row.sigData='';
+  refreshCompletion(row);
+  saveDraft();
+  syncRowToBackend(row);
+}
+
+// --- persistence ---
+const LIMITS_VERSION = 2; // bump whenever the default kg / % limits change
+function saveDraft(){
+  const data = {
+    operator: document.getElementById('operator').value,
+    sheetDate: document.getElementById('sheetDate').value,
+    notesText: document.getElementById('notesText').value,
+    threshold: document.getElementById('threshold').value,
+    kgTolerance: document.getElementById('kgTolerance').value,
+    limitsVersion: LIMITS_VERSION,
+    specificGravity: document.getElementById('specificGravity').value,
+    deviceName: document.getElementById('deviceName').value,
+    rows: rows
+  };
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){}
+}
+
+function loadDraft(){
+  let data = null;
+  try{ data = JSON.parse(localStorage.getItem(STORAGE_KEY)); }catch(e){}
+  if(data){
+    document.getElementById('operator').value = data.operator||'';
+    document.getElementById('sheetDate').value = data.sheetDate||'';
+    document.getElementById('notesText').value = data.notesText || document.getElementById('notesText').value;
+    // Limits changed to 20 kg / 5% (Oct 2026): devices saved under the old 15 kg / 3% limits are reset to the new ones
+    const currentLimits = data.limitsVersion === LIMITS_VERSION;
+    document.getElementById('threshold').value = (currentLimits && data.threshold) || 5;
+    document.getElementById('kgTolerance').value = (currentLimits && data.kgTolerance) || 20;
+    document.getElementById('specificGravity').value = data.specificGravity || '0.79';
+    document.getElementById('deviceName').value = data.deviceName || '';
+    rows = (data.rows && data.rows.length) ? data.rows : makeDefaultRows();
+  } else {
+    rows = makeDefaultRows();
+  }
+}
+
+function makeDefaultRows(){
+  const arr = [];
+  for(let i=0;i<DEFAULT_ROW_COUNT;i++){ arr.push(newRow()); }
+  return arr;
+}
+
+// --- toolbar actions ---
+document.getElementById('addRowBtn').addEventListener('click', ()=>{
+  rows.push(newRow());
+  render();
+  saveDraft();
+});
+
+function clearWarning(){
+  const n = pendingCount();
+  return n ? "\n\n⚠ "+n+" entr"+(n===1?"y has":"ies have")+" NOT been sent to the shared report yet (no connection or not signed in). Clearing now will lose "+(n===1?"it":"them")+"." : "";
+}
+
+async function manualClearSheet(){
+  await syncAllRows();
+  if(!confirm("Clear this device's local sheet? All sent entries are already saved in the shared report — this only clears this device's local view for a fresh start."+clearWarning())){
+    return;
+  }
+  rows = makeDefaultRows();
+  render();
+  saveDraft();
+  alert('Sheet cleared.');
+}
+
+document.getElementById('clearSheetBtn').addEventListener('click', manualClearSheet);
+
+document.getElementById('threshold').addEventListener('input', ()=>{ render(); saveDraft(); });
+document.getElementById('kgTolerance').addEventListener('input', ()=>{ render(); saveDraft(); });
+document.getElementById('specificGravity').addEventListener('change', ()=>{ render(); saveDraft(); });
+document.getElementById('notesText').addEventListener('input', saveDraft);
+['operator','sheetDate','deviceName'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', saveDraft);
+});
+
+// --- monthly report banner ---
+function monthKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function lastDayOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); }
+
+function checkMonthlyBanner(){
+  const today = new Date();
+  let clearedMonths = [];
+  try{ clearedMonths = JSON.parse(localStorage.getItem('monthlyClearedMonths_TEST')||'[]'); }catch(e){}
+  const curKey = monthKey(today);
+  const isLastDay = today.getDate() === lastDayOfMonth(today);
+  const prevDate = new Date(today.getFullYear(), today.getMonth()-1, 1);
+  const prevKey = monthKey(prevDate);
+  let targetKey = null, targetLabel = null;
+  if(isLastDay && !clearedMonths.includes(curKey)){
+    targetKey = curKey; targetLabel = today.toLocaleString('en-AU',{month:'long',year:'numeric'});
+  } else if(today.getDate() <= 5 && !clearedMonths.includes(prevKey)){
+    targetKey = prevKey; targetLabel = prevDate.toLocaleString('en-AU',{month:'long',year:'numeric'});
+  }
+  const banner = document.getElementById('monthBanner');
+  let dismissedFor = null;
+  try{ dismissedFor = sessionStorage.getItem('monthBannerDismissed_TEST'); }catch(e){}
+  if(targetKey && dismissedFor!==targetKey){
+    banner.style.display='flex';
+    document.getElementById('monthBannerText').textContent = "It's month-end — this device's entries for "+targetLabel+" are already synced to the shared report. You can clear this device's local sheet to start fresh.";
+    banner.dataset.targetKey = targetKey;
+    banner.dataset.targetLabel = targetLabel;
+  } else {
+    banner.style.display='none';
+  }
+}
+
+async function clearForNewMonth(targetKey, targetLabel){
+  await syncAllRows();
+  if(!confirm("Clear this device's local sheet for "+targetLabel+"? Sent entries are already saved in the shared report, so this only clears this device's view."+clearWarning())){
+    return;
+  }
+  let clearedMonths = [];
+  try{ clearedMonths = JSON.parse(localStorage.getItem('monthlyClearedMonths_TEST')||'[]'); }catch(e){}
+  if(!clearedMonths.includes(targetKey)) clearedMonths.push(targetKey);
+  try{ localStorage.setItem('monthlyClearedMonths_TEST', JSON.stringify(clearedMonths)); }catch(e){}
+  rows = makeDefaultRows();
+  render();
+  saveDraft();
+  document.getElementById('monthBanner').style.display='none';
+  alert('Sheet cleared for the new month.');
+}
+
+document.getElementById('monthSendBtn').addEventListener('click', ()=>{
+  const banner = document.getElementById('monthBanner');
+  clearForNewMonth(banner.dataset.targetKey, banner.dataset.targetLabel);
+});
+document.getElementById('monthDismissBtn').addEventListener('click', ()=>{
+  const banner = document.getElementById('monthBanner');
+  try{ sessionStorage.setItem('monthBannerDismissed_TEST', banner.dataset.targetKey); }catch(e){}
+  banner.style.display='none';
+});
+
+// --- keep lock timers and month banner current while the page stays open ---
+function rerenderPreservingFocus(){
+  const active = document.activeElement;
+  const rowId = active && active.dataset ? active.dataset.rowId : null;
+  const field = active && active.dataset ? active.dataset.field : null;
+  render();
+  if(rowId && field) restoreFocus(rowId, field);
+}
+setInterval(()=>{ rerenderPreservingFocus(); checkMonthlyBanner(); syncAllRows(); }, 60000);
+
+loadDraft();
+render();
+checkMonthlyBanner();
+
+FuelAuth.start({ title: 'Sign in with your work email to record refuels. Your entries go to the shared monthly report.' }).then(async ctx=>{
+  AUTH = ctx;
+  FuelAuth.userBar(ctx, document.querySelector('h1'));
+  if(ctx.isEditor){
+    const sub = document.querySelector('.sub');
+    const a = document.createElement('a'); a.href='report.html'; a.textContent=' Open monthly report →'; a.style.fontWeight='600';
+    sub.appendChild(a);
+  }
+  await syncAllRows();
+});
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+</script>
+</body>
+</html>
