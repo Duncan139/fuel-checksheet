@@ -104,6 +104,10 @@
           const redirect = location.origin + location.pathname;
           const { data, error } = await client.auth.signUp({ email, password, options:{ emailRedirectTo: redirect } });
           if(error) throw error;
+          // Supabase returns a placeholder (no identities) when the email already has an account
+          if(data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0){
+            throw new Error('already registered');
+          }
           if(data.session){ await finish(opts, resolve, data.user); }
           else signInForm(opts, resolve, 'signin', email, {text:'Account created. Check your email for a confirmation link, then sign in here.'});
         } else {
@@ -118,7 +122,6 @@
         msg.textContent = /invalid login/i.test(m) ? 'Email or password is incorrect.'
           : /signups? not allowed/i.test(m) ? 'New accounts are created by your base manager — ask them to set you up.'
           : /already (been )?registered|already exists/i.test(m) ? 'This email already has an account. Go back and sign in, or use "Forgot password?" to set a new one.'
-          : /at least|weak|short/i.test(m) ? m
           : /fetch|network/i.test(m) ? 'No connection. Connect to the internet to sign in.'
           : m;
       }
