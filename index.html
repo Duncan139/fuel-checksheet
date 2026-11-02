@@ -411,11 +411,26 @@ function render(){
   const pctThreshold = parseFloat(document.getElementById('threshold').value) || 5;
   const density = parseFloat(document.getElementById('specificGravity').value) || 0.79;
 
-  rows.forEach((row,i)=>{
+  rows.forEach((row,i)=>{ tbody.appendChild(buildRow(row, i, {kgTolerance, pctThreshold, density}, true)); });
+}
+
+function currentLimits(){
+  return {
+    kgTolerance: parseFloat(document.getElementById('kgTolerance').value) || 20,
+    pctThreshold: parseFloat(document.getElementById('threshold').value) || 5,
+    density: parseFloat(document.getElementById('specificGravity').value) || 0.79
+  };
+}
+
+// Builds one refuel row. withSig=false is used when only the calculated boxes are needed (no signature pad set-up).
+function buildRow(row, i, lim, withSig){
+    const {kgTolerance, pctThreshold, density} = lim;
     refreshCompletion(row);
     const c = calc(row, kgTolerance, pctThreshold, density);
     const locked = isRowLocked(row);
     const tr = document.createElement('tr');
+    tr.dataset.rowId = row.id;
+    tr.dataset.locked = locked ? '1' : '';
     if(locked) tr.classList.add('lockedRow');
 
     const numTd = document.createElement('td');
@@ -482,7 +497,7 @@ function render(){
       sigTd.appendChild(btnWrap);
     }
     tr.appendChild(sigTd);
-    setTimeout(()=> initSigPad(canvas, row, locked), 0);
+    if(withSig) setTimeout(()=> initSigPad(canvas, row, locked), 0);
 
     // remove row
     const rmTd = document.createElement('td');
@@ -505,9 +520,43 @@ function render(){
     Array.from(tr.children).forEach((td,j)=>{ if(CELL_LABELS[j]) td.dataset.label = CELL_LABELS[j]; });
     numTd.dataset.label = 'Refuel';
     if(!locked && isRowEmpty(row)) tr.classList.add('emptyRow');
+    return tr;
+}
 
-    tbody.appendChild(tr);
+// Update a row in place: refresh the calculated boxes without rebuilding the boxes people type into,
+// so date/time pickers and the keyboard aren't closed and reopened on every change.
+function patchRow(row){
+  const tr = document.querySelector('#tableBody tr[data-row-id="'+row.id+'"]');
+  const i = rows.indexOf(row);
+  if(!tr || i < 0){ render(); return; }
+  const fresh = buildRow(row, i, currentLimits(), false);
+  if(fresh.dataset.locked !== tr.dataset.locked){
+    // lock state changed (an hour after completion): rebuild just this row
+    const full = buildRow(row, i, currentLimits(), true);
+    tr.replaceWith(full);
+    return;
+  }
+  Array.from(fresh.children).forEach((td, j)=>{
+    const old = tr.children[j];
+    if(!old) return;
+    if(td.classList.contains('calc') || td.classList.contains('result')){
+      if(old.className !== td.className) old.className = td.className;
+      if(old.textContent !== td.textContent) old.textContent = td.textContent;
+    }
   });
+  // Fuel Required (Kg) is auto-filled from Desired After − FQI Before
+  const del = tr.querySelector('input[data-field="deliveredKg"]');
+  const freshDel = fresh.querySelector('input[data-field="deliveredKg"]');
+  if(del && freshDel){
+    if(document.activeElement !== del && del.value !== freshDel.value) del.value = freshDel.value;
+    del.disabled = freshDel.disabled;
+  }
+  tr.classList.toggle('emptyRow', fresh.classList.contains('emptyRow'));
+}
+
+function patchAllRows(){
+  if(rows.length !== document.querySelectorAll('#tableBody tr').length){ render(); return; }
+  rows.forEach(patchRow);
 }
 
 const CELL_LABELS = ['Refuel','Aircraft','Date','Time','FQI Before (Kg)','FQI Before (L)','Desired Fuel After (Kg)','Desired Fuel After (L)',
@@ -576,8 +625,7 @@ function onFieldInput(e){
   }
 
   refreshCompletion(row);
-  render();
-  restoreFocus(e.target.dataset.rowId, e.target.dataset.field);
+  patchRow(row);
   saveDraft();
   syncRowToBackend(row);
 }
@@ -633,7 +681,7 @@ function initSigPad(canvas, row, locked){
     refreshCompletion(row);
     saveDraft();
     syncRowToBackend(row);
-    if(row.completedAt) render();
+    patchRow(row);
   }
   canvas.addEventListener('mousedown', start);
   canvas.addEventListener('mousemove', move);
@@ -719,9 +767,9 @@ async function manualClearSheet(){
 
 document.getElementById('clearSheetBtn').addEventListener('click', manualClearSheet);
 
-document.getElementById('threshold').addEventListener('input', ()=>{ render(); saveDraft(); });
-document.getElementById('kgTolerance').addEventListener('input', ()=>{ render(); saveDraft(); });
-document.getElementById('specificGravity').addEventListener('change', ()=>{ render(); saveDraft(); });
+document.getElementById('threshold').addEventListener('input', ()=>{ patchAllRows(); saveDraft(); });
+document.getElementById('kgTolerance').addEventListener('input', ()=>{ patchAllRows(); saveDraft(); });
+document.getElementById('specificGravity').addEventListener('change', ()=>{ patchAllRows(); saveDraft(); });
 document.getElementById('notesText').addEventListener('input', saveDraft);
 ['operator','sheetDate','deviceName'].forEach(id=>{
   document.getElementById(id).addEventListener('input', saveDraft);
@@ -785,14 +833,8 @@ document.getElementById('monthDismissBtn').addEventListener('click', ()=>{
 });
 
 // --- keep lock timers and month banner current while the page stays open ---
-function rerenderPreservingFocus(){
-  const active = document.activeElement;
-  const rowId = active && active.dataset ? active.dataset.rowId : null;
-  const field = active && active.dataset ? active.dataset.field : null;
-  render();
-  if(rowId && field) restoreFocus(rowId, field);
-}
-setInterval(()=>{ rerenderPreservingFocus(); checkMonthlyBanner(); syncAllRows(); }, 60000);
+// Once a minute: lock rows that passed the 1-hour mark (in place, without disturbing the box being edited)
+setInterval(()=>{ patchAllRows(); checkMonthlyBanner(); syncAllRows(); }, 60000);
 
 loadDraft();
 render();
