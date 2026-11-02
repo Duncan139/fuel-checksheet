@@ -8,7 +8,18 @@
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="auth.js"></script>
 <style>
+  .crewPanel h2{font-size:14px;margin:0 0 4px;}
+  .crewPanel p{font-size:12px;color:#555;margin:0 0 8px;}
+  .crewList{list-style:none;padding:0;margin:0 0 10px;display:flex;flex-direction:column;gap:4px;}
+  .crewList li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;}
+  .crewList li small{color:#777;}
+  .crewList button{border:none;background:#a30000;color:#fff;border-radius:5px;font-size:11px;padding:4px 8px;cursor:pointer;}
+  .crewAdd{display:flex;gap:8px;flex-wrap:wrap;}
+  .crewAdd input{flex:1;min-width:160px;padding:8px;font-size:14px;border:1px solid #999;border-radius:6px;}
+  td .by{display:block;font-size:10px;color:#555;}
+  @media print{.crewPanel{display:none !important;}}
   :root{
     --border:#333;
     --bg:#fff;
@@ -130,6 +141,17 @@
   <div class="summary" id="summary"></div>
 </div>
 
+<div class="panel crewPanel">
+  <h2>Crew allowed to record refuels</h2>
+  <p>Add each pilot's or engineer's work email. They then open the checksheet, tap "First time? Create password" and choose their own password. Base managers (scheduler editors) are always allowed. Removing someone stops them sending new entries; their past entries stay in the report.</p>
+  <ul class="crewList" id="crewList"><li><small>Loading…</small></li></ul>
+  <form class="crewAdd" id="crewAddForm">
+    <input type="email" id="crewEmail" placeholder="name@ihelis.com.au" required>
+    <input type="text" id="crewName" placeholder="Name (optional)">
+    <button class="btn" type="submit">Add to crew</button>
+  </form>
+</div>
+
 <div class="toolbar">
   <button class="btn secondary" id="csvBtn" disabled>Export CSV</button>
   <button class="btn secondary" id="printBtn" disabled>Print / Save as PDF</button>
@@ -159,9 +181,8 @@
 </div>
 
 <script>
-const SUPABASE_URL = 'https://ogtkccynaaavbbkacnjn.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_ckWPuUr5hasC2nPLuBtBUg_no-_TErd';
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Signed-in client from auth.js (report is limited to base managers / scheduler editors)
+const supabaseClient = FuelAuth.client;
 
 let currentRows = [];
 
@@ -244,9 +265,13 @@ function renderReport(){
       fmt(r.before_kg), fmt(r.desired_after_kg), fmt(r.delivered_kg), fmt(r.after_kg),
       fmt(c.fobDeltaKg), fmt(c.discrepKg)
     ];
-    cells.forEach(text=>{
+    cells.forEach((text,j)=>{
       const td = document.createElement('td');
       td.textContent = text;
+      if(j===3 && r.entered_by_email){
+        const by = document.createElement('span'); by.className='by'; by.textContent = r.entered_by_email;
+        td.appendChild(by);
+      }
       tr.appendChild(td);
     });
 
@@ -293,11 +318,11 @@ function renderReport(){
 function exportCsv(){
   const kgTolerance = parseFloat(document.getElementById('kgTolerance').value) || 20;
   const pctThreshold = parseFloat(document.getElementById('threshold').value) || 5;
-  const header = ['Aircraft','Date','Time','Device','FQI Before (Kg)','Desired After (Kg)','Delivered (Kg)','FQI After (Kg)','FOB Delta (Kg)','Discrepancy (Kg)','% Check','Result'];
+  const header = ['Aircraft','Date','Time','Device','Entered by','FQI Before (Kg)','Desired After (Kg)','Delivered (Kg)','FQI After (Kg)','FOB Delta (Kg)','Discrepancy (Kg)','% Check','Result'];
   const rows = currentRows.map(r=>{
     const c = calcRow(r, kgTolerance, pctThreshold);
     return [
-      r.aircraft_id||'', r.date||'', r.time||'', r.device_name||'',
+      r.aircraft_id||'', r.date||'', r.time||'', r.device_name||'', r.entered_by_email||'',
       fmt(r.before_kg), fmt(r.desired_after_kg), fmt(r.delivered_kg), fmt(r.after_kg),
       fmt(c.fobDeltaKg), fmt(c.discrepKg),
       c.pct!=null?fmt(c.pct,1)+'%':'',
@@ -328,7 +353,45 @@ document.getElementById('loadBtn').addEventListener('click', loadReport);
 document.getElementById('csvBtn').addEventListener('click', exportCsv);
 document.getElementById('printBtn').addEventListener('click', ()=> window.print());
 
-loadReport();
+// --- crew list (editors only) ---
+async function loadCrew(){
+  const list = document.getElementById('crewList');
+  const { data, error } = await supabaseClient.from('fuel_crew').select('email,name,added_at').order('email');
+  list.innerHTML = '';
+  if(error){ list.innerHTML = '<li><small>Could not load crew list: '+error.message.replace(/</g,'&lt;')+'</small></li>'; return; }
+  if(!data.length){ list.innerHTML = '<li><small>No crew added yet — only base managers can record refuels.</small></li>'; return; }
+  data.forEach(c=>{
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.textContent = c.email;
+    if(c.name){ const s=document.createElement('small'); s.textContent='  '+c.name; who.appendChild(s); }
+    const rm = document.createElement('button'); rm.type='button'; rm.textContent='Remove';
+    rm.addEventListener('click', async ()=>{
+      if(!confirm('Remove '+c.email+' from the crew list? They will no longer be able to send new refuel entries.')) return;
+      const { error } = await supabaseClient.from('fuel_crew').delete().eq('email', c.email);
+      if(error) alert('Could not remove: '+error.message);
+      loadCrew();
+    });
+    li.appendChild(who); li.appendChild(rm);
+    list.appendChild(li);
+  });
+}
+document.getElementById('crewAddForm').addEventListener('submit', async ev=>{
+  ev.preventDefault();
+  const email = document.getElementById('crewEmail').value.trim().toLowerCase();
+  const name = document.getElementById('crewName').value.trim() || null;
+  if(!email) return;
+  const { error } = await supabaseClient.from('fuel_crew').upsert({ email, name });
+  if(error){ alert('Could not add: '+error.message); return; }
+  document.getElementById('crewEmail').value=''; document.getElementById('crewName').value='';
+  loadCrew();
+});
+
+FuelAuth.start({ requireEditor: true, title: 'The monthly report is for base managers. Sign in with your scheduler login.' }).then(ctx=>{
+  FuelAuth.userBar(ctx, document.querySelector('.formHeader'));
+  loadReport();
+  loadCrew();
+});
 </script>
 </body>
 </html>

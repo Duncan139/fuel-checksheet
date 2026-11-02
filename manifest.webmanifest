@@ -1,6 +1,6 @@
 {
-  "name": "Fuel Checksheet (TEST)",
-  "short_name": "Fuel TEST",
+  "name": "Fuel Quantity Checksheet",
+  "short_name": "Fuel Check",
   "description": "Record AW139 refuels and FQI checks; entries go to the shared monthly report.",
   "start_url": "./index.html",
   "scope": "./",

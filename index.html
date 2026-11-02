@@ -7,8 +7,13 @@
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1a5fb4">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="auth.js"></script>
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Fuel Check">
 <style>
   :root{
@@ -96,6 +101,33 @@
   .monthBanner button{padding:8px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;}
   .monthBanner .sendBtn{background:#164a34;color:#fff;}
   .monthBanner .dismissBtn{background:#ddd;color:#333;}
+
+  /* Phones: each refuel becomes a card instead of a wide table row */
+  @media screen and (max-width:760px){
+    body{padding:10px 10px calc(10px + env(safe-area-inset-bottom));}
+    .notesBox textarea{min-height:60px;}
+    .tableWrap{max-height:none;overflow:visible;border:none;background:transparent;}
+    table{min-width:0;}
+    #mainTable thead{display:none;}
+    #mainTable, #mainTable tbody, #mainTable tr, #mainTable td{display:block;width:100%;}
+    #mainTable tr{background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden;position:relative;}
+    #mainTable tr.emptyRow ~ tr.emptyRow{display:none;}
+    #mainTable td{border:none;border-bottom:1px solid #e3e3e3;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 10px;min-height:44px;text-align:right;}
+    #mainTable td::before{content:attr(data-label);font-size:12px;font-weight:600;color:#444;text-align:left;flex:0 0 46%;}
+    #mainTable td.rowNum{position:static;justify-content:flex-start;font-size:13px;min-height:34px;background:var(--grey);}
+    #mainTable td.rowNum::before{flex:0 0 auto;}
+    #mainTable td input, #mainTable td select.aircraftSel{flex:1;min-width:0;text-align:right;font-size:16px;height:40px;border:1px solid #bbb;border-radius:6px;padding:4px 8px;background:#fff;}
+    #mainTable td input:disabled, #mainTable td select:disabled{background:#f0f0f0;border-color:#ddd;}
+    #mainTable td.calc, #mainTable td.result{font-size:14px;}
+    #mainTable td.sigCell{display:block;text-align:left;}
+    #mainTable td.sigCell::before{display:block;margin:4px 0 6px;}
+    #mainTable canvas.sigPad{height:140px;}
+    #mainTable td.rmCell{position:absolute;top:0;right:0;left:auto;width:auto;border:none;min-height:34px;padding:0 8px;background:transparent;}
+    #mainTable td.rmCell::before{content:none;}
+    .removeBtn{font-size:12px;padding:5px 9px;}
+    .toolbar{position:static;}
+    .toolbar .btn{min-width:0;}
+  }
 
   @media print{
     body{background:#fff;padding:0;font-size:9px;}
@@ -208,38 +240,101 @@
 const STORAGE_KEY = 'fuelChecksheetDraft_v4_generic';
 const DEFAULT_ROW_COUNT = 20;
 
-// --- backend sync (Supabase) ---
-const SUPABASE_URL = 'https://ogtkccynaaavbbkacnjn.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_ckWPuUr5hasC2nPLuBtBUg_no-_TErd';
-const supabaseClient = (window.supabase && SUPABASE_URL)
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
+// --- backend sync (Supabase, signed-in crew only) ---
+// AUTH is set once the person signs in (see FuelAuth.start at the bottom).
+// Entries are always kept on this device first; anything not yet sent is retried every minute.
+let AUTH = null;
+let SESSION_OK = false;
 
-async function syncRowToBackend(row){
-  if(!supabaseClient) return;
+function rowPayload(row){
   const deviceNameEl = document.getElementById('deviceName');
   const toNum = (v)=> (v==='' || v==null || isNaN(parseFloat(v))) ? null : parseFloat(v);
-  try{
-    await supabaseClient.from('refuels').upsert({
-      id: row.id,
-      aircraft_id: row.aircraft || null,
-      device_name: deviceNameEl ? deviceNameEl.value : null,
-      date: row.date || null,
-      time: row.time || null,
-      before_kg: toNum(row.beforeKg),
-      desired_after_kg: toNum(row.desiredAfterKg),
-      delivered_kg: toNum(row.deliveredKg),
-      after_kg: toNum(row.afterKg),
-      sig_data: row.sigData || null
-    });
-  }catch(e){
-    // offline or network error — will retry on next edit or periodic tick
-  }
+  return {
+    id: row.id,
+    aircraft_id: row.aircraft || null,
+    device_name: deviceNameEl ? (deviceNameEl.value || null) : null,
+    date: row.date || null,
+    time: row.time || null,
+    before_kg: toNum(row.beforeKg),
+    desired_after_kg: toNum(row.desiredAfterKg),
+    delivered_kg: toNum(row.deliveredKg),
+    after_kg: toNum(row.afterKg),
+    sig_data: row.sigData || null
+  };
 }
 
-function syncAllRows(){
-  rows.forEach(syncRowToBackend);
+function rowNeedsSync(row){
+  if(!row.aircraft || row._syncClosed) return false; // aircraft is required before a record can be saved
+  return row._syncedSig !== JSON.stringify(rowPayload(row));
 }
+
+async function refreshSession(){
+  if(!AUTH) return false;
+  try{
+    const { data } = await AUTH.client.auth.getSession();
+    SESSION_OK = !!(data && data.session);
+  }catch(e){ SESSION_OK = false; }
+  return SESSION_OK;
+}
+
+async function syncRowToBackend(row){
+  if(!AUTH || !SESSION_OK || !AUTH.isCrew) { updateSyncStatus(); return; }
+  if(!rowNeedsSync(row)) return;
+  const payload = rowPayload(row);
+  const sig = JSON.stringify(payload);
+  let error = null;
+  try{
+    const res = await AUTH.client.from('refuels').upsert(payload, { returning: 'minimal' });
+    error = res.error;
+  }catch(e){ error = { message: String(e) }; }
+  if(!error){
+    row._syncedSig = sig;
+  } else if(error.code === '42501'){
+    // Permission refused: either this record is already in the shared report and closed for edits,
+    // or this person has been taken off the crew list. Check which before giving up on the row.
+    let stillCrew = true;
+    try{ const r = await AUTH.client.rpc('fuel_is_crew'); stillCrew = r.data !== false; }catch(e){}
+    if(stillCrew) row._syncClosed = true;
+    else AUTH.isCrew = false;
+  }
+  // any other error (offline, timeout) — left pending and retried on the next tick
+  saveDraft();
+  updateSyncStatus();
+}
+
+let syncing = false;
+async function syncAllRows(){
+  if(syncing || !AUTH) { updateSyncStatus(); return; }
+  syncing = true;
+  try{
+    await refreshSession();
+    for(const row of rows){ await syncRowToBackend(row); }
+  } finally { syncing = false; updateSyncStatus(); }
+}
+
+function pendingCount(){ return rows.filter(rowNeedsSync).length; }
+
+function updateSyncStatus(){
+  const el = document.getElementById('fuelSyncStatus');
+  if(!el) return;
+  const n = pendingCount();
+  if(AUTH && !AUTH.isCrew){
+    el.className='sync err';
+    el.textContent='⚠ Your email isn\'t on the crew list yet — entries are kept on this device until your base manager adds you.';
+  } else if(AUTH && !SESSION_OK){
+    el.className='sync err';
+    el.innerHTML='⚠ Sign in again to send '+n+' entr'+(n===1?'y':'ies')+'. ';
+    const b=document.createElement('button'); b.textContent='Sign in'; b.type='button';
+    b.addEventListener('click', ()=>location.reload()); el.appendChild(b);
+  } else if(n===0){
+    el.className='sync ok'; el.textContent='✓ All entries sent';
+  } else {
+    el.className='sync wait';
+    el.textContent='⏳ '+n+' entr'+(n===1?'y':'ies')+' waiting to send'+(navigator.onLine===false?' (offline)':'');
+  }
+}
+window.addEventListener('online', ()=>{ syncAllRows(); });
+window.addEventListener('offline', updateSyncStatus);
 
 let rows = [];
 let rowCounter = 0;
@@ -403,10 +498,23 @@ function render(){
       });
       rmTd.appendChild(rmBtn);
     }
+    rmTd.className = 'rmCell';
     tr.appendChild(rmTd);
+
+    // labels for the phone card layout
+    Array.from(tr.children).forEach((td,j)=>{ if(CELL_LABELS[j]) td.dataset.label = CELL_LABELS[j]; });
+    numTd.dataset.label = 'Refuel';
+    if(!locked && isRowEmpty(row)) tr.classList.add('emptyRow');
 
     tbody.appendChild(tr);
   });
+}
+
+const CELL_LABELS = ['Refuel','Aircraft','Date','Time','FQI Before (Kg)','FQI Before (L)','Desired Fuel After (Kg)','Desired Fuel After (L)',
+  'Fuel Required (Kg)','Fuel Required (L) — add this','FQI After (Kg)','FQI After (L)','FOB Δ (Kg)','Discrepancy (Kg)','% Check','Result','Signature',''];
+
+function isRowEmpty(row){
+  return !(row.aircraft || row.date || row.time || row.beforeKg || row.desiredAfterKg || row.deliveredKg || row.afterKg || row.sigData);
 }
 
 function aircraftCell(row, disabled){
@@ -593,9 +701,14 @@ document.getElementById('addRowBtn').addEventListener('click', ()=>{
   saveDraft();
 });
 
-function manualClearSheet(){
-  syncAllRows();
-  if(!confirm("Clear this iPad's local sheet? All synced entries are already saved in the shared report — this only clears this device's local view for a fresh start.")){
+function clearWarning(){
+  const n = pendingCount();
+  return n ? "\n\n⚠ "+n+" entr"+(n===1?"y has":"ies have")+" NOT been sent to the shared report yet (no connection or not signed in). Clearing now will lose "+(n===1?"it":"them")+"." : "";
+}
+
+async function manualClearSheet(){
+  await syncAllRows();
+  if(!confirm("Clear this device's local sheet? All sent entries are already saved in the shared report — this only clears this device's local view for a fresh start."+clearWarning())){
     return;
   }
   rows = makeDefaultRows();
@@ -637,7 +750,7 @@ function checkMonthlyBanner(){
   try{ dismissedFor = sessionStorage.getItem('monthBannerDismissed_generic'); }catch(e){}
   if(targetKey && dismissedFor!==targetKey){
     banner.style.display='flex';
-    document.getElementById('monthBannerText').textContent = "It's month-end — this iPad's entries for "+targetLabel+" are already synced to the shared report. You can clear this device's local sheet to start fresh.";
+    document.getElementById('monthBannerText').textContent = "It's month-end — this device's entries for "+targetLabel+" are already synced to the shared report. You can clear this device's local sheet to start fresh.";
     banner.dataset.targetKey = targetKey;
     banner.dataset.targetLabel = targetLabel;
   } else {
@@ -645,9 +758,9 @@ function checkMonthlyBanner(){
   }
 }
 
-function clearForNewMonth(targetKey, targetLabel){
-  syncAllRows();
-  if(!confirm("Clear this iPad's local sheet for "+targetLabel+"? All entries are already saved in the shared report, so this only clears this device's view — nothing is lost.")){
+async function clearForNewMonth(targetKey, targetLabel){
+  await syncAllRows();
+  if(!confirm("Clear this device's local sheet for "+targetLabel+"? Sent entries are already saved in the shared report, so this only clears this device's view."+clearWarning())){
     return;
   }
   let clearedMonths = [];
@@ -684,7 +797,21 @@ setInterval(()=>{ rerenderPreservingFocus(); checkMonthlyBanner(); syncAllRows()
 loadDraft();
 render();
 checkMonthlyBanner();
-syncAllRows();
+
+FuelAuth.start({ title: 'Sign in with your work email to record refuels. Your entries go to the shared monthly report.' }).then(async ctx=>{
+  AUTH = ctx;
+  FuelAuth.userBar(ctx, document.querySelector('h1'));
+  if(ctx.isEditor){
+    const sub = document.querySelector('.sub');
+    const a = document.createElement('a'); a.href='report.html'; a.textContent=' Open monthly report →'; a.style.fontWeight='600';
+    sub.appendChild(a);
+  }
+  await syncAllRows();
+});
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
 </script>
 </body>
 </html>
