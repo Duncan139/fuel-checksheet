@@ -173,7 +173,7 @@
    It is only flagged for investigation if BOTH the % and Kg checks are exceeded.
    Enter Desired Fuel After (Kg) to auto-calculate Fuel Required (Kg) = Desired Fuel After − FQI Before.
 4. A refuel row locks automatically 1 hour after every box in that row (including signature) has been completed.
-5. Every entry is synced automatically to the shared report once this device is online — no need to print or email anything.
+5. Every entry is synced automatically to the shared report once this device is online — no need to print or email anything. Once an entry is safely in the shared report, it is removed from this device 24 hours after it was completed.
 6. At month end, a banner lets you clear this device's local sheet to start fresh (your entries stay safe in the shared report either way).</textarea>
   <div class="thresholdRow">
     % threshold (OK if within this):
@@ -289,12 +289,13 @@ async function syncRowToBackend(row){
   }catch(e){ error = { message: String(e) }; }
   if(!error){
     row._syncedSig = sig;
+    if(!row._sentAt) row._sentAt = Date.now();
   } else if(error.code === '42501'){
     // Permission refused: either this record is already in the shared report and closed for edits,
     // or this person has been taken off the crew list. Check which before giving up on the row.
     let stillCrew = true;
     try{ const r = await AUTH.client.rpc('fuel_is_crew'); stillCrew = r.data !== false; }catch(e){}
-    if(stillCrew) row._syncClosed = true;
+    if(stillCrew){ row._syncClosed = true; if(!row._sentAt) row._sentAt = Date.now(); }
     else AUTH.isCrew = false;
   }
   // any other error (offline, timeout) — left pending and retried on the next tick
@@ -313,6 +314,35 @@ async function syncAllRows(){
 }
 
 function pendingCount(){ return rows.filter(rowNeedsSync).length; }
+
+// --- tidy the device: entries confirmed in the shared records are removed from this device
+// 24 hours after they were completed (or, if never completed, 24 hours after they were first sent).
+// Anything not yet confirmed as sent is never removed.
+const DEVICE_KEEP_MS = 24*60*60*1000;
+function isSafelyStored(row){
+  if(!row.aircraft) return false;
+  if(row._syncClosed) return true;
+  return !!row._syncedSig && row._syncedSig === JSON.stringify(rowPayload(row));
+}
+function removeOldSentRows(){
+  const now = Date.now();
+  const before = rows.length;
+  rows = rows.filter(row=>{
+    if(!isSafelyStored(row)) return true;
+    const since = row.completedAt || row._sentAt;
+    return !(since && (now - since) >= DEVICE_KEEP_MS);
+  });
+  if(rows.length === before) return false;
+  // keep the sheet ready for the next refuel
+  while(rows.length < DEFAULT_ROW_COUNT) rows.push(newRow());
+  if(!rows.some(isRowEmpty)) rows.push(newRow());
+  saveDraft();
+  const active = document.activeElement;
+  if(active && document.getElementById('tableBody').contains(active)) return true; // redraw on the next tick instead of interrupting typing
+  render();
+  updateSyncStatus();
+  return true;
+}
 
 function updateSyncStatus(){
   const el = document.getElementById('fuelSyncStatus');
@@ -834,7 +864,7 @@ document.getElementById('monthDismissBtn').addEventListener('click', ()=>{
 
 // --- keep lock timers and month banner current while the page stays open ---
 // Once a minute: lock rows that passed the 1-hour mark (in place, without disturbing the box being edited)
-setInterval(()=>{ patchAllRows(); checkMonthlyBanner(); syncAllRows(); }, 60000);
+setInterval(async ()=>{ patchAllRows(); checkMonthlyBanner(); await syncAllRows(); removeOldSentRows(); }, 60000);
 
 loadDraft();
 render();
@@ -849,6 +879,7 @@ FuelAuth.start({ title: 'Sign in with your work email to record refuels. Your en
     sub.appendChild(a);
   }
   await syncAllRows();
+  removeOldSentRows();
 });
 
 if('serviceWorker' in navigator){

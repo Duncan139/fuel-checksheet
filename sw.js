@@ -1,7 +1,7 @@
 // Offline support for the Fuel Quantity Checksheet.
 // Pages and scripts: network first (so updates arrive as soon as there's signal), cached copy when offline.
 // Database and sign-in calls are never cached.
-const CACHE = 'fuel-checksheet-v2';
+const CACHE = 'fuel-checksheet-v3';
 const CORE = [
   './', './index.html', './auth.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png', './favicon-32.png',
